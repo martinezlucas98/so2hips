@@ -1,4 +1,18 @@
-python3
+python3python3-devel
+gcc
 mailq
 pip3 install psutil
 netstat (apt-get install net-tools)
+
+yum isntall postgresql-client
+yum install postgres1l-devel
+
+CREATE TABLE dangerapp (names varchar(25));
+INSERT INTO dangerapp (name) VALUES ('solarwinds'),('prtg'),('manageengine'),('omnipeek'),('tcpdump'),('windump'),('wireshark'),('fiddler'),('netresec'),('capsa'),('ethereal');
+
+
+CREATE TABLE processlimits (name varchar(25),cpu real, mem real, maxtime bigint);
+
+
+CREATE TABLE general (myipv4 varchar(15),maxmailq int);
+INSERT INTO general (myipv4) VALUES ('192.168.0.11');

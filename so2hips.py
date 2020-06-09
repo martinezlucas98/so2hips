@@ -1,7 +1,57 @@
 import os
 import subprocess
 import psutil
+import socket
+import psycopg2
 
+def connect_to_db():
+	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : ''}
+	credential_ok=False
+	while(credential_ok is not True):
+		print("Please enter the following data (press enter for default value)\n")
+		#my_host = input("Enter host (default: localhost) :  ")
+		#my_port = int(input("Enter port (default: 5432) :  "))
+		my_user = input("Enter username (default postgres) :  ")
+		my_passwd = input("Enter password (default postgres) :  ")
+		my_db = input("Enter database (default postgres) :  ")
+		try:
+			conn = psycopg2.connect(database="hipsdb", user="root", password="testpwd")
+			credential_ok = True
+		except:
+			print("\n\n\nSomething went wrong. Please check your credentials and try again\n\n\n")
+	
+	cursor = conn.cursor()
+	dangerapp_query = "SELECT * FROM dangerapp"
+	processlimits_query = "SELECT * FROM processlimits"
+	general_query = "SELECT * FROM general"
+	
+	cursor.execute(dangerapp_query)
+	data = cursor.fetchall()
+	data_str = ''
+	for row in data:
+		data_str+=row[0]+'|'
+		
+	preferences_dict['dangerapp']=data_str[:-1]
+	#print(preferences_dict['dangerapp'])
+
+
+	cursor.execute(processlimits_query)
+	data = cursor.fetchall()
+	data_list = []
+	for row in data:
+		data_list.append({'name':row[0], 'cpu_max_usage':row[1], 'mem_max_usage':row[3], 'max_run_time':row[3]})
+		
+	preferences_dict['processlimits']=data_list
+	
+	
+	cursor.execute(general_query)
+	data = cursor.fetchall()
+	for row in data:
+		preferences_dict['myip'] = row[0]
+		preferences_dict['maxmailq'] = row[1]
+
+		
+	return preferences_dict
 
 def is_program(name):
         #Ve si el archivo `name` existe
@@ -78,23 +128,39 @@ def process_usage(PROCESS_USAGE_LIMITS):
 	
 def check_ip_connected():
 	IPs_connected = subprocess.Popen("netstat -tu 2>/dev/null", stdout=subprocess.PIPE, shell=True)
+	(output, err) = IPs_connected.communicate()
+	print(output.decode("utf-8"))
+	print('\n')
+
+def check_invalid_dir(MY_IP):
+	p = subprocess.Popen("cat /var/log/httpd/access_log | grep -v "+MY_IP+" | grep -v ::1 | grep 404", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	print(output.decode("utf-8"))
+	print('\n')
 			
 	
-def main():
-	MAX_Q_COUNT = 1000
-	P_DIR = '/var/log/messages'
-	P_APP_LIST = 'wireshark|tcpdump'
-	PROCESS_USAGE_LIMITS = '' #name cpu memory time
 	
-	if os.path.isdir(P_DIR) is not True:
+def main():
+	data_list = connect_to_db()
+	
+	MY_IP = data_list['myip']
+	MAX_Q_COUNT = data_list['maxmailq']
+	P_DIR = '/var/log/messages'
+	P_APP_LIST = data_list['dangerapp']
+	PROCESS_USAGE_LIMITS = data_list['processlimits']
+	
+	if os.path.isfile(P_DIR) is not True:
 		P_DIR = '/var/log/syslog'
 	#print(''+P_DIR+'\n')
 	#ciclo main
-	check_mailq(MAX_Q_COUNT)
+	#check_mailq(MAX_Q_COUNT)
 	#is_program("wget")
 	#is_program("asdfgh")
-	check_promisc(P_DIR, P_APP_LIST)
-	process_usage()
+	#check_promisc(P_DIR, P_APP_LIST)
+	#process_usage(PROCESS_USAGE_LIMITS)
+	#check_ip_connected()
+	#check_invalid_dir(MY_IP)
+	
 	
 	return(0)
         
