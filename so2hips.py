@@ -5,7 +5,7 @@ import socket
 import psycopg2
 
 def connect_to_db():
-	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : ''}
+	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : '', 'md5sum': []}
 	credential_ok=False
 	while(credential_ok is not True):
 		print("Please enter the following data (press enter for default value)\n")
@@ -24,14 +24,17 @@ def connect_to_db():
 	dangerapp_query = "SELECT * FROM dangerapp"
 	processlimits_query = "SELECT * FROM processlimits"
 	general_query = "SELECT * FROM general"
+	md5sum_query = "SELECT hash FROM md5sum"
+	md5sum_create_query = "SELECT dir FROM md5sum WHERE hash IS NULL"
 	
 	cursor.execute(dangerapp_query)
 	data = cursor.fetchall()
 	data_str = ''
 	for row in data:
 		data_str+=row[0]+'|'
-		
-	preferences_dict['dangerapp']=data_str[:-1]
+	
+	if(data_str != ''):	
+		preferences_dict['dangerapp']=data_str[:-1]
 	#print(preferences_dict['dangerapp'])
 
 
@@ -50,8 +53,45 @@ def connect_to_db():
 		preferences_dict['myip'] = row[0]
 		preferences_dict['maxmailq'] = row[1]
 
+	cursor.execute(md5sum_create_query)
+	data = cursor.fetchall()
+	was_updated = False
+	for row in data:
+		update_hash_query = 'UPDATE md5sum SET hash=\''+create_md5sum_hash(row[0])+'\' WHERE dir=\''+row[0]+'\';'
+		cursor.execute(update_hash_query)
+		was_updated = True
+	conn.commit()
+	
+	if(was_updated is not True):
+		cursor.execute(md5sum_query)
+		data = cursor.fetchall()
+		data_list = []
+		for row in data:
+			data_list.append(row[0])
+			
+		preferences_dict['md5sum']=data_list
+		
+		
+	else:
+		cursor.close()
+		conn.close()
+		conn = psycopg2.connect(database="hipsdb", user="root", password="testpwd")
+		cursor = conn.cursor()
+		
+		cursor.execute(md5sum_query)
+		data = cursor.fetchall()
+		data_list = []
+		for row in data:
+			data_list.append(row[0])
+			
+		preferences_dict['md5sum']=data_list
+
+	cursor.close()
+	conn.close()
 		
 	return preferences_dict
+		
+		
 
 def is_program(name):
         #Ve si el archivo `name` existe
@@ -138,7 +178,22 @@ def check_invalid_dir(MY_IP):
 	print(output.decode("utf-8"))
 	print('\n')
 			
-	
+def check_md5sum(MD5SUM_LIST):
+	md5_tmp_dir = '/tmp/so2hipshashes.md5'
+	for my_hash in MD5SUM_LIST:
+		subprocess.Popen("echo "+my_hash+" >> "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
+	p =subprocess.Popen("md5sum -c "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	print(output.decode("utf-8"))
+	print('\n')
+	#subprocess.Popen("rm "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
+
+def create_md5sum_hash(dir_str):
+	p =subprocess.Popen("md5sum "+dir_str, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	print(output.decode("utf-8"))
+	print('\n')
+	return output.decode("utf-8")[:-1]
 	
 def main():
 	data_list = connect_to_db()
@@ -148,6 +203,7 @@ def main():
 	P_DIR = '/var/log/messages'
 	P_APP_LIST = data_list['dangerapp']
 	PROCESS_USAGE_LIMITS = data_list['processlimits']
+	MD5SUM_LIST= data_list['md5sum']
 	
 	if os.path.isfile(P_DIR) is not True:
 		P_DIR = '/var/log/syslog'
@@ -160,8 +216,8 @@ def main():
 	#process_usage(PROCESS_USAGE_LIMITS)
 	#check_ip_connected()
 	#check_invalid_dir(MY_IP)
-	
-	
+	#check_promisc_apps(P_APP_LIST)
+	check_md5sum(MD5SUM_LIST)
 	return(0)
         
         

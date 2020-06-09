@@ -16,3 +16,19 @@ CREATE TABLE processlimits (name varchar(25),cpu real, mem real, maxtime bigint)
 
 CREATE TABLE general (myipv4 varchar(15),maxmailq int);
 INSERT INTO general (myipv4) VALUES ('192.168.0.11');
+
+CREATE TABLE md5sum (dir varchar, hash varchar);
+
+crear user readonly en postgres con el nombre del user (root)
+o:
+
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO root;
+GRANT ALL USAGE,SELECT ON ALL TABLES IN SCHEMA public TO root;
+maybe usage???
+
+
+CREATE TABLE login (usr varchar(25), pass varchar(50));
+INSERT INTO login (usr, pass) VALUES ('sysadmin','systemso2');
+
+crear user en postgres con el nombre de public_user con passwd ""
+
