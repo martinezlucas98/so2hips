@@ -10,8 +10,10 @@ import json
 import time
 import datetime
 
-gPASS = ''
+gPASS = 'holamundo123'
 gMYMAIL = 'so2hips2020@gmail.com'
+gQUARENTMAIL = ''
+gQUARENT = ''
 
 def connect_to_db():
 	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : '', 'md5sum': []}
@@ -123,6 +125,21 @@ def check_mailq(MAX_Q_COUNT):
 	if len(mail_list) > MAX_Q_COUNT:
 		print("Do something\n")
 
+def check_mail_sends():
+	counts = dict()
+	#email_list = list()
+	p = subprocess.Popen("cat  /var/log/maillog | grep -i authid", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	ret_msg = output.decode("utf-8")
+	for line in ret_msg.splitlines():
+		email = line.split(' ')[7]
+		email = email[7:-1] #quitamos el authid= y la coma del final
+		if email in counts:
+			counts[email]+=1
+			if counts[email] == 200: #numero arbitrario
+				send_email(gMYMAIL,'Alert Type 1 : Masive email',"More than 200 emails were sent using: "+email)
+		else:
+			counts[email] = 1
 
 def check_promisc_devs(P_DIR ):
 	p_off = subprocess.Popen("cat "+P_DIR+" | grep \"left promisc\"", stdout=subprocess.PIPE, shell=True)
@@ -161,11 +178,16 @@ def check_promisc_apps(P_APP_LIST):
 	(output, err) = p.communicate()
 	global gMYMAIL
 	body = output.decode("utf-8")
+	for line in body.splitlines():
+		file_dir = line.split(' ')[1]
+		app_pid = line.split(' ')[0]
+		send_to_quarentine(file_dir)
+		kill_process(app_pid)
 	if len(body)>1:
-		body = 'Found sniffers services:\n'+body
+		body = 'Found sniffers services:\n'+body+"\nAll sniffers were sent to quarentine"
 		send_email(gMYMAIL,'Alert Type 2 : Sniffers found',body)
 	#print(output.decode("utf-8"))
-	print('\n')	
+	#print('\n')	
 
 def check_promisc(P_DIR, P_APP_LIST):
 	check_promisc_devs(P_DIR)
@@ -181,16 +203,40 @@ def process_usage(PROCESS_USAGE_LIMITS):
 	for proc in process_list:
 		max_cpu = 10.000
 		max_mem = 10.000
-		max_runtime = 18000.000 #5hs (esta en segundos)
+		#max_runtime = 189900.000 #2 dias y 5hs aprox (esta en segundos)
+		max_runtime = -1.000
 		#print(proc)
 		if proc['name'].lower() in (dic['name'].lower() for dic in PROCESS_USAGE_LIMITS):
 			max_cpu = dic['cpu_max_usage']
 			max_mem = dic['mem_max_usage']
 			max_runtime = dic['max_run_time']
 		p_runtime = time.time() - proc['create_time']
-		if proc['cpu_percent'] > max_cpu or proc['memory_percent'] > max_mem or p_runtime > max_runtime:
+
+		exceeded = ''
+		cpu_x=mem_x=runtime_x=False
+		if proc['cpu_percent'] > max_cpu:
+			cpu_x = True
+			exceeded=exceeded+'CPU'
+
+		if proc['memory_percent'] > max_mem:
+			mem_x = True
+			if exceeded != '':
+				exceeded=exceeded+' & Memory'
+			else:
+				exceeded=exceeded+'Memory'
+
+		if (p_runtime > max_runtime and max_runtime >=0.000) :
+			runtime_x = True
+			if exceeded != '':
+				exceeded=exceeded+' & Runtime'
+			else:
+				exceeded=exceeded+'Runtime'
+		if cpu_x or mem_x or runtime_x:
 			proc.update({'runtime':str(datetime.timedelta(seconds=int(p_runtime)))})
+			proc.update({'reason': 'Exceeded: '+exceeded+' max value for this process'})
+
 			body+=json.dumps(proc)+'\n\n'
+			kill_process(proc.pid)
 	if body !='':
 		body = 'Elevated Process Usage Found:\n\n'+body
 		global gMYMAIL
@@ -208,10 +254,34 @@ def check_ip_connected():
 	print('\n')
 
 def check_invalid_dir(MY_IP):
+	counts = dict()
+	ip_list = list()
 	p = subprocess.Popen("cat /var/log/httpd/access_log | grep -v "+MY_IP+" | grep -v ::1 | grep 404", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	print(output.decode("utf-8"))
-	print('\n')
+	#print(output.decode("utf-8"))
+	#print('\n')
+	ret_msg = output.decode("utf-8")
+	print(ret_msg+"\n\n\n\n")
+	for line in ret_msg.splitlines():
+		#la primera palabra de cada linea es la ip
+		first_word = line.split(" ")[0]
+		ip_list.append(first_word)
+		#print (line+"\n\n\n")
+	body = ''
+	for ip in ip_list:
+		if ip in counts:
+			counts[ip]+=1
+			if counts[ip] == 5 :
+				block_ip(ip)
+				body = body + '\n'+ip
+		else:
+			counts[ip]=1
+	if body != '':
+		body = "Blocked IP's:"+body
+		global gMYMAIL
+		send_email(gMYMAIL,'Alert Type 2 : Unknow Web Dir',body)
+	#print (counts)
+		
 			
 def check_md5sum(MD5SUM_LIST):
 	body = ''
@@ -252,9 +322,12 @@ def find_shells(DIR):
 		txt = output.decode("utf-8")
 		if(txt !=''):
 			body +='Found posible script in: '+line+'\n'
+			send_to_quarentine(line)
 			#print('Found posible script in: '+line)
 	global gMYMAIL
-	send_email(gMYMAIL,'Alert Type 2 : Shells found',body)
+	if body!='':
+		body = body +"\nAll files were sent to quarentine."
+		send_email(gMYMAIL,'Alert Type 2 : Shells found',body)
 
 def find_scripts(DIR):
 	exten = ['py','c','cpp','ruby','sh','exe','php','java','pl']
@@ -265,15 +338,34 @@ def find_scripts(DIR):
 		cmd = cmd[:-4]
 	p =subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
+	body = ''	
+	scripts = output.decode("utf-8")
+	body = body + scripts
 	#print(output.decode("utf-8"))
-	body = 'Found posible script file/s :\n'+output.decode("utf-8")
+	#body = 'Found posible script file/s :\n'+output.decode("utf-8")
 	global gMYMAIL
-	send_email(gMYMAIL,'Alert Type 2 : Scripts found',body)
+	if body!='':
+		for line in scripts.splitlines():
+			send_to_quarentine(line)
+		body = 'Found posible script file/s :\n'+body +"\nAll files were sent to quarentine."
+		send_email(gMYMAIL,'Alert Type 2 : Scripts found',body)
 
 			
 def check_tmp_dir():
 	find_shells("/tmp")
 	find_scripts("/tmp")	
+	
+def check_auths_log():
+	global gMYMAIL
+	p =subprocess.Popen("cat /var/log/secure | grep -i \"authentication failure\"", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	ret_msg = output.decode("utf-8")
+	body = ''
+	#for line in ret_msg.splitlines():
+	
+	body = body + ret_msg
+	if body != '':
+		send_email(gMYMAIL,'Alert Type 1 : Authentication failure',body)
 	
 
 def send_email(email,subject,body):
@@ -292,9 +384,26 @@ def send_email(email,subject,body):
 	del msg
 	s.quit()
 
+def send_to_quarentine(s_file):
+	#print (s_file+'--')
+	p =subprocess.Popen("mv "+s_file+" "+gQUARENT, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+def block_ip(ip):
+	p =subprocess.Popen("iptables -A INPUT -s "+ip+" -j DROP", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+
+	p =subprocess.Popen("service iptables save", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+
+def kill_process(pid):
+	p =subprocess.Popen("kill -9 "+pid, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+
 def main():
+	global gQUARENTMAIL
+	global gQUARENT
 	data_list = connect_to_db()
-	
+	gQUARENT = '/quarent'
 	MY_IP = data_list['myip']
 	MAX_Q_COUNT = data_list['maxmailq']
 	P_DIR = '/var/log/messages'
@@ -305,19 +414,31 @@ def main():
 	if os.path.isfile(P_DIR) is not True:
 		P_DIR = '/var/log/syslog'
 
+	if os.path.isdir(gQUARENT) is not True:
+		p =subprocess.Popen("mkdir "+gQUARENT, stdout=subprocess.PIPE, shell=True)
+		(output, err) = p.communicate()
+	
+	p =subprocess.Popen("chmod 664 "+gQUARENT, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+
 	#print(''+P_DIR+'\n')
 	#ciclo main
 	#check_mailq(MAX_Q_COUNT)
+	#check_mail_sends()
 	#is_program("wget")
 	#is_program("asdfgh")
 	#check_promisc(P_DIR, P_APP_LIST)
 	#process_usage(PROCESS_USAGE_LIMITS)
 	#check_ip_connected()
-	#check_invalid_dir(MY_IP)
+	#check_invalid_dir(MY_IP) #www.algo.com/noexiste
 	#check_promisc_apps(P_APP_LIST)
-	check_md5sum(MD5SUM_LIST)
+	#check_md5sum(MD5SUM_LIST)
 	#check_tmp_dir()
+	#check_auths_log()
 	
+	if gQUARENTMAIL != '':
+		send_email(gMYMAIL,'Files moved to quarentine',gQUARENTMAIL)
+
 	print('DONE')
 	return(0)
         
