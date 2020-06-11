@@ -3,6 +3,15 @@ import subprocess
 import psutil
 import socket
 import psycopg2
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import json
+import time
+import datetime
+
+gPASS = ''
+gMYMAIL = 'so2hips2020@gmail.com'
 
 def connect_to_db():
 	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : '', 'md5sum': []}
@@ -42,7 +51,7 @@ def connect_to_db():
 	data = cursor.fetchall()
 	data_list = []
 	for row in data:
-		data_list.append({'name':row[0], 'cpu_max_usage':row[1], 'mem_max_usage':row[3], 'max_run_time':row[3]})
+		data_list.append({'name':row[0], 'cpu_max_usage':row[1], 'mem_max_usage':row[2], 'max_run_time':row[3]})
 		
 	preferences_dict['processlimits']=data_list
 	
@@ -142,12 +151,20 @@ def check_promisc_devs(P_DIR ):
 			if dict_counter[device]%2 != 0:
 				devices_on.append(device)
 		for device in devices_on:
-			print(''+device+' :: Promiscuous mode ON\n')
+			global gMYMAIL
+			body = ''+device+' :: Promiscuous mode ON\n'
+			send_email(gMYMAIL,'Alert Type 2 : Promisc mode ON',body)
+			#print(''+device+' :: Promiscuous mode ON\n')
 
 def check_promisc_apps(P_APP_LIST):
 	p = subprocess.Popen("ps axo pid,command | grep -E '"+P_APP_LIST+"' | grep -v '"+P_APP_LIST+"'", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	print(output.decode("utf-8"))
+	global gMYMAIL
+	body = output.decode("utf-8")
+	if len(body)>1:
+		body = 'Found sniffers services:\n'+body
+		send_email(gMYMAIL,'Alert Type 2 : Sniffers found',body)
+	#print(output.decode("utf-8"))
 	print('\n')	
 
 def check_promisc(P_DIR, P_APP_LIST):
@@ -160,10 +177,28 @@ def process_usage(PROCESS_USAGE_LIMITS):
 	for proc in psutil.process_iter():
 		process_dict = proc.as_dict(attrs=['pid', 'name', 'cpu_percent', 'memory_percent', 'create_time'])
 		process_list.append(process_dict)
-		
+	body = ''
 	for proc in process_list:
-		print(proc)
-	print('\n')
+		max_cpu = 10.000
+		max_mem = 10.000
+		max_runtime = 18000.000 #5hs (esta en segundos)
+		#print(proc)
+		if proc['name'].lower() in (dic['name'].lower() for dic in PROCESS_USAGE_LIMITS):
+			max_cpu = dic['cpu_max_usage']
+			max_mem = dic['mem_max_usage']
+			max_runtime = dic['max_run_time']
+		p_runtime = time.time() - proc['create_time']
+		if proc['cpu_percent'] > max_cpu or proc['memory_percent'] > max_mem or p_runtime > max_runtime:
+			proc.update({'runtime':str(datetime.timedelta(seconds=int(p_runtime)))})
+			body+=json.dumps(proc)+'\n\n'
+	if body !='':
+		body = 'Elevated Process Usage Found:\n\n'+body
+		global gMYMAIL
+		send_email(gMYMAIL,'Alert Type 2 : Process Usage',body)
+		
+
+		
+	#print('\n')
 	
 	
 def check_ip_connected():
@@ -179,14 +214,24 @@ def check_invalid_dir(MY_IP):
 	print('\n')
 			
 def check_md5sum(MD5SUM_LIST):
+	body = ''
 	md5_tmp_dir = '/tmp/so2hipshashes.md5'
 	for my_hash in MD5SUM_LIST:
 		subprocess.Popen("echo "+my_hash+" >> "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
 	p =subprocess.Popen("md5sum -c "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	print(output.decode("utf-8"))
-	print('\n')
-	#subprocess.Popen("rm "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
+	
+	if output.decode("utf-8")[-3:-1] != 'OK':
+		print(output.decode("utf-8"))
+		body+=output.decode("utf-8")
+	if body != '':
+		body = 'MD5SUM hash modified:\n\n' + body	
+		global gMYMAIL
+		send_email(gMYMAIL,'Alert Type 3 : MD5SUM Modified',body)
+
+	
+	#print('\n')
+	subprocess.Popen("rm "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
 
 def create_md5sum_hash(dir_str):
 	p =subprocess.Popen("md5sum "+dir_str, stdout=subprocess.PIPE, shell=True)
@@ -195,6 +240,58 @@ def create_md5sum_hash(dir_str):
 	print('\n')
 	return output.decode("utf-8")[:-1]
 	
+def find_shells(DIR):
+	body = ''
+	p =subprocess.Popen("find "+DIR+" -type f", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	#print(output.decode("utf-8"))
+	tmp_files_str = output.decode("utf-8")
+	for line in tmp_files_str.splitlines():
+		cat =subprocess.Popen("cat "+line+" | grep '#!'", stdout=subprocess.PIPE, shell=True)
+		(output, err) = cat.communicate()
+		txt = output.decode("utf-8")
+		if(txt !=''):
+			body +='Found posible script in: '+line+'\n'
+			#print('Found posible script in: '+line)
+	global gMYMAIL
+	send_email(gMYMAIL,'Alert Type 2 : Shells found',body)
+
+def find_scripts(DIR):
+	exten = ['py','c','cpp','ruby','sh','exe','php','java','pl']
+	cmd = "find "+DIR+" -type f "
+	for e in exten:
+		cmd+= "-iname '*."+e+"' -o -iname '*."+e+".*' -o "
+	if cmd!="find "+DIR+" -type f ":
+		cmd = cmd[:-4]
+	p =subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	#print(output.decode("utf-8"))
+	body = 'Found posible script file/s :\n'+output.decode("utf-8")
+	global gMYMAIL
+	send_email(gMYMAIL,'Alert Type 2 : Scripts found',body)
+
+			
+def check_tmp_dir():
+	find_shells("/tmp")
+	find_scripts("/tmp")	
+	
+
+def send_email(email,subject,body):
+	global gPASS
+	my_address = 'so2hips2020@gmail.com'
+	s = smtplib.SMTP('smtp.gmail.com', 587)
+	s.starttls()
+	s.login(my_address,gPASS)
+
+	msg = MIMEMultipart()
+	msg['From']=my_address
+	msg['To']=email
+	msg['Subject']=subject
+	msg.attach(MIMEText(body,'plain'))
+	s.send_message(msg)
+	del msg
+	s.quit()
+
 def main():
 	data_list = connect_to_db()
 	
@@ -207,6 +304,7 @@ def main():
 	
 	if os.path.isfile(P_DIR) is not True:
 		P_DIR = '/var/log/syslog'
+
 	#print(''+P_DIR+'\n')
 	#ciclo main
 	#check_mailq(MAX_Q_COUNT)
@@ -218,6 +316,9 @@ def main():
 	#check_invalid_dir(MY_IP)
 	#check_promisc_apps(P_APP_LIST)
 	check_md5sum(MD5SUM_LIST)
+	#check_tmp_dir()
+	
+	print('DONE')
 	return(0)
         
         
