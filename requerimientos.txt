@@ -27,10 +27,13 @@ GRANT ALL USAGE,SELECT ON ALL TABLES IN SCHEMA public TO root;
 maybe usage???
 
 
-CREATE TABLE login (usr varchar(25), pass varchar(50));
-INSERT INTO login (usr, pass) VALUES ('sysadmin','systemso2');
+CREATE TABLE login (usr varchar(25), pass varchar(50)); NOO
+INSERT INTO login (usr, pass) VALUES ('sysadmin','systemso2'); NOO
 
-crear user en postgres con el nombre de public_user con passwd ""
+crear user en postgres con el nombre de public_user con passwd "" NOO
+
+CREATE TABLE alarms (time TIMESTAMP, alarm varchar);
+CREATE TABLE prevention (time TIMESTAMP, action varchar);
 
 
 Configurar blacklist de postfix (como root)
@@ -43,3 +46,5 @@ service postfix restart
 
 
 crear con root el directorio /var/log/hips
+
+pg_hba.conf (editar)

@@ -8,16 +8,39 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import json
 import time
-import datetime
+from datetime import datetime
 import random
 import string
 
+#Variables globales
+
+#gPASS	(string) almacena la contrasenha del correo que envia las alertas
 gPASS = 'holamundo123'
+
+#gMYMAIL	(string) direccion de correo electronico al cual mandar las alertas
 gMYMAIL = 'so2hips2020@gmail.com'
+
+#gQUARENTMAIL	(string) informacion: todos los archivos mandados a cuarentena
 gQUARENTMAIL = ''
+
+#gQUARENT	(string) absolute path del directorio de cuarentena
 gQUARENT = ''
 
+
+g_my_user = 'root'
+g_my_passwd = 'testpwd'
+g_my_db = 'hipsdb'
+
+
+
+#Funcion: connect_to_db
+#
+#Establece la conexion con la base de datos postgresql
+#
 def connect_to_db():
+	global g_my_user
+	global g_my_passwd
+	global g_my_db
 	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : '', 'md5sum': []}
 	credential_ok=False
 	while(credential_ok is not True):
@@ -28,7 +51,7 @@ def connect_to_db():
 		my_passwd = input("Enter password (default postgres) :  ")
 		my_db = input("Enter database (default postgres) :  ")
 		try:
-			conn = psycopg2.connect(database="hipsdb", user="root", password="testpwd")
+			conn = psycopg2.connect(database=g_my_db, user=g_my_user, password=g_my_passwd)
 			credential_ok = True
 		except:
 			print("\n\n\nSomething went wrong. Please check your credentials and try again\n\n\n")
@@ -88,7 +111,7 @@ def connect_to_db():
 	else:
 		cursor.close()
 		conn.close()
-		conn = psycopg2.connect(database="hipsdb", user="root", password="testpwd")
+		conn = psycopg2.connect(database=g_my_db, user=g_my_user, password=g_my_passwd)
 		cursor = conn.cursor()
 		
 		cursor.execute(md5sum_query)
@@ -118,6 +141,15 @@ def check_files_is_program(list):
         #nothing yet
         print('')
 
+
+
+#Funcion: check_mailq
+#
+#	Verifica si la cola de mails supero una cantidad maxima determinada
+#
+#Parametros:
+#	MAX_Q_COUNT	(int) numero maximo de mails que pueden estar en cola
+#
 def check_mailq(MAX_Q_COUNT):
 	p = subprocess.Popen("mailq", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
@@ -127,13 +159,21 @@ def check_mailq(MAX_Q_COUNT):
 	if len(mail_list) > MAX_Q_COUNT:
 		print("Do something\n")
 
+
+
+#Funcion: check_smtp_maillog
+#
+#	Verifica si se han enviado una cantidad masiva de mails desde un mismo correo
+#	y de ser asi lo pone en una lista negra y alerta. Lo hace revisando el archivo /var/log/maillog
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
 def check_smtp_maillog():
 	#banned_emails = list()
 	counts = dict()
 	#email_list = list()
 	p = subprocess.Popen("cat  /var/log/maillog | grep -i authid", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	ret_msg = output.decode("utf-8")\
+	ret_msg = output.decode("utf-8")
 	body = ''
 	for line in ret_msg.splitlines():
 		email = line.split(' ')[7]
@@ -155,12 +195,20 @@ def check_smtp_maillog():
 			echo_alarmaslog(aux+"emails sent using "+key, "SMTP attack",'')
 			echo_prevencionlog(key+" was added to postfix email blacklist", "SMTP attack")
 
+
+
+#Funcion: check_smtp_messages
+#
+#	Verifica si se produjeron multiples Authentication Errors hacia un mismo usuario.
+#	Lo hace revisando el archivo /var/log/messages
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
 def check_smtp_messages():
 	counts = dict()
 	#email_list = list()
 	p = subprocess.Popen("cat  /var/log/messages | grep -i \"[service=smtp]\" | grep -i \"auth failure\"", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	ret_msg = output.decode("utf-8")\
+	ret_msg = output.decode("utf-8")
 	body = ''
 	new_passwds = ''
 	for line in ret_msg.splitlines():
@@ -183,12 +231,20 @@ def check_smtp_messages():
 		if aux >= 200:
 			echo_alarmaslog(aux+"Authentication failure for "+key, "SMTP attack",'')
 
+
+
+#Funcion: check_smtp_secure
+#
+#	Verifica si se produjeron multiples Authentication Errors hacia un mismo usuario.
+#	Lo hace revisando el archivo /var/log/secure
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
 def check_smtp_secure():
 	counts = dict()
 	#email_list = list()
 	p = subprocess.Popen("cat  /var/log/secure | grep -i \"(smtp:auth)\" | grep -i \"authentication failure\"", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	ret_msg = output.decode("utf-8")\
+	ret_msg = output.decode("utf-8")
 	body = ''
 	new_passwds = ''
 	for line in ret_msg.splitlines():
@@ -211,11 +267,31 @@ def check_smtp_secure():
 		if aux >= 200:
 			echo_alarmaslog(aux+"Authentication failure for "+key, "SMTP attack",'')
 
+
+
+
+#Funcion: check_smtp_attack
+#
+#	Invoca a las funciones que buscan patrones de un posible ataque SMTP.
+#	(Ver: check_smtp_maillog , check_smtp_messages y check_smtp_secure)
+#
 def check_smtp_attack():
 	check_smtp_maillog()
 	check_smtp_messages()
 	check_smtp_secure()
 
+
+
+#Funcion: check_promisc_devs
+#
+#	Verifica el estado del modo promiscuos de los dispositivos del ordenador, verificando
+#	si fue encendido o apagado ultimamente.
+#	En caso de encontrar algun dispositivo en modo promiscuo, lo alerta.
+#	Guarda las alertas en el log correspondiente (Ver: echo_alarmaslog)
+#
+#Parametros:
+#	P_DIR	(string)directorio de donde buscar los dispositivos, Normalmente es /var/log/secure
+#
 def check_promisc_devs(P_DIR ):
 	p_off = subprocess.Popen("cat "+P_DIR+" | grep \"left promisc\"", stdout=subprocess.PIPE, shell=True)
 	(output_off, err) = p_off.communicate()
@@ -249,6 +325,18 @@ def check_promisc_devs(P_DIR ):
 		send_email(gMYMAIL,'Alert Type 2 : Promisc mode ON',body)
 			#print(''+device+' :: Promiscuous mode ON\n')
 
+
+
+#Funcion: check_promisc_apps
+#
+#	Busca si se encuentran en el ordenador aplicaciones de sniffers no deseadas.
+#	En caso de encontrar alguna, lo alerta, mata el proceso y lo pone en el directorio de cuarentena
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	P_APP_LIST	(list)lista con el nombre de las aplicaciones de sniffers no deseadas.
+#			Estas seran buscadas.
+#
 def check_promisc_apps(P_APP_LIST):
 	p = subprocess.Popen("ps axo pid,command | grep -E '"+P_APP_LIST+"' | grep -v '"+P_APP_LIST+"'", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
@@ -268,11 +356,34 @@ def check_promisc_apps(P_APP_LIST):
 	#print(output.decode("utf-8"))
 	#print('\n')	
 
+
+
+#Funcion: check_promisc
+#
+#	Invoca a las funciones encargadas de monitorear los modos promiscuos y sniffers.
+#	(Ver: check_promisc_devs y check_promisc_apps)
+#
 def check_promisc(P_DIR, P_APP_LIST):
 	check_promisc_devs(P_DIR)
 	check_promisc_apps(P_APP_LIST)
 	
-	
+
+
+#Funcion: process_ussage
+#
+#	Verifica el consumo de recursos de cpu, memoria y tiempo de los procesos activos.
+#	En caso de encontrar algun proceso que sobrepase su valor de uso maximo lo alerta y lo mata.
+#	(si no lo tiene definido, entonces se utilizaran los valores standard)
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	PROCESS_USAGE_LIMITS	(dict) diccionario con pid , name , cpu_percent , memory_percent , create_time
+#				de los procesos.
+#				name : (string) nombre del proceso
+#				cpu_percent : (float) del 0 al 100, porcenje de uso de la cpu por el profeso
+#				memory_percemt : (float) del 0 al 100, porcenje de uso de la RAM por el profeso
+#				create_time :	tiempo de creacion del proceso en POSIX
+#	
 def process_usage(PROCESS_USAGE_LIMITS):
 	process_list = list()
 	for proc in psutil.process_iter():
@@ -280,8 +391,8 @@ def process_usage(PROCESS_USAGE_LIMITS):
 		process_list.append(process_dict)
 	body = ''
 	for proc in process_list:
-		max_cpu = 10.000
-		max_mem = 10.000
+		max_cpu = 90.000
+		max_mem = 90.000
 		#max_runtime = 189900.000 #2 dias y 5hs aprox (esta en segundos)
 		max_runtime = -1.000
 		#print(proc)
@@ -315,7 +426,7 @@ def process_usage(PROCESS_USAGE_LIMITS):
 			proc.update({'reason': 'Exceeded: '+exceeded+' max value for this process'})
 
 			body+=json.dumps(proc)+'\n\n'
-			kill_process(proc.pid)
+			kill_process(proc['pid'])
 
 			echo_alarmaslog("Process exceeded max resources value "+json.dumps(proc), "High resources usage",'')
 			echo_prevencionlog("Process killed due to high resources usage "+json.dumps(proc), "High resources usage")
@@ -328,13 +439,30 @@ def process_usage(PROCESS_USAGE_LIMITS):
 		
 	#print('\n')
 	
-	
+
+
+#Funcion: check_ip_connected
+#
+#	Obtiene las IP (mediante netstat) de las maquinas conectadas al servidor
+#	
 def check_ip_connected():
 	IPs_connected = subprocess.Popen("netstat -tu 2>/dev/null", stdout=subprocess.PIPE, shell=True)
 	(output, err) = IPs_connected.communicate()
 	print(output.decode("utf-8"))
 	print('\n')
 
+
+
+#Funcion: check_invalid_dir
+#
+#	Verifica si alguna maquina se encuentra realizando fuzzling. Luego de 5 intentos fallidos de
+#	acceder a un directorio de la pagina web del servidor, se alerta y bloquea la IP mediante
+#	el uso de IPTable
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	MY_IP	(string)IP de la maquina servidor. Para obviarla de la busqueda de intentos fallidos.
+#
 def check_invalid_dir(MY_IP):
 	counts = dict()
 	ip_list = list()
@@ -367,7 +495,16 @@ def check_invalid_dir(MY_IP):
 	#print (counts)
 	
 		
-			
+
+#Funcion: check_md5sum
+#
+#	
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	P_APP_LIST	(list)lista con el nombre de las aplicaciones de sniffers no deseadas.
+#			Estas seran buscadas.
+#			
 def check_md5sum(MD5SUM_LIST):
 	body = ''
 	md5_tmp_dir = '/tmp/so2hipshashes.md5'
@@ -380,7 +517,7 @@ def check_md5sum(MD5SUM_LIST):
 		#print(output.decode("utf-8"))
 		body+=output.decode("utf-8")
 		file_dir = output.decode("utf-8").split(" ")[0]
-		echo_alarmaslog("MD5SUM hash value changed for "file_dir, "MD5SUM altered","")
+		echo_alarmaslog("MD5SUM hash value changed for "+file_dir, "MD5SUM altered","")
 
 	if body != '':
 		body = 'MD5SUM hash modified:\n\n' + body	
@@ -391,13 +528,37 @@ def check_md5sum(MD5SUM_LIST):
 	#print('\n')
 	subprocess.Popen("rm "+md5_tmp_dir, stdout=subprocess.PIPE, shell=True)
 
+
+
+#Funcion: create_md5sum_hash
+#
+#	Crea un hash md5sum utilizando la funcion md5sum para un archivo en especifico
+#
+#Parametros:
+#	dir_str	(string)absolute path del archivo al cual queremos crearle un hash md5sum.
+#
+#Retorna:
+#	(string) el hash producido
+#
 def create_md5sum_hash(dir_str):
 	p =subprocess.Popen("md5sum "+dir_str, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 	print(output.decode("utf-8"))
 	print('\n')
 	return output.decode("utf-8")[:-1]
-	
+
+
+
+#Funcion: find_shells
+#
+#	Inspecciona los archivos dentro de un directorio (de forma recursiva con find) buscando patrones
+#	de archivos shell (empiezan con #!).
+#	Si los encuentra, alerta y mueve el archivo al directorio de cuarentena.
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	DIR	(string) absolute path del directorio donde se buscaran los shells. Normalmente es /tmp
+#	
 def find_shells(DIR):
 	body = ''
 	p =subprocess.Popen("find "+DIR+" -type f", stdout=subprocess.PIPE, shell=True)
@@ -419,6 +580,18 @@ def find_shells(DIR):
 		body = body +"\nAll files were sent to quarentine."
 		send_email(gMYMAIL,'Alert Type 2 : Shells found',body)
 
+
+
+#Funcion: find_scripts
+#
+#	Inspecciona las terminaciones de los archivos dentro de un directorio (de forma recursiva con find)
+#	buscando terminaciones clasicas de scripts (ejemplo: .py, .c, .exe, etc).
+#	Si los encuentra, alerta y mueve el archivo al directorio de cuarentena.
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	DIR	(string) absolute path del directorio donde se buscaran los scripts. Normalmente es /tmp
+#	
 def find_scripts(DIR):
 	exten = ['py','c','cpp','ruby','sh','exe','php','java','pl']
 	cmd = "find "+DIR+" -type f "
@@ -426,11 +599,13 @@ def find_scripts(DIR):
 		cmd+= "-iname '*."+e+"' -o -iname '*."+e+".*' -o "
 	if cmd!="find "+DIR+" -type f ":
 		cmd = cmd[:-4]
+	#print (cmd)
 	p =subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	body = ''	
+	body = ''
 	scripts = output.decode("utf-8")
 	body = body + scripts
+	#print (body)
 	#print(output.decode("utf-8"))
 	#body = 'Found posible script file/s :\n'+output.decode("utf-8")
 	global gMYMAIL
@@ -442,11 +617,25 @@ def find_scripts(DIR):
 		body = 'Found posible script file/s :\n'+body +"\nAll files were sent to quarentine."
 		send_email(gMYMAIL,'Alert Type 2 : Scripts found',body)
 
-			
+
+
+
+#Funcion: check_tmp_dir
+#
+#	Invoca a las funciones encargadas de monitorear el directorio /tmp en busca de archivos sospechosos.
+#	(ver: find_shells y find_scripts)
+#	
 def check_tmp_dir():
 	find_shells("/tmp")
 	find_scripts("/tmp")	
-	
+
+
+
+#Funcion: check_auths_log
+#
+#	Busca Authentication Failures en /var/log/secure. En el caso de encontrarlas, los alerta.
+#	Guarda las alertas en el log correspondiente (Ver: echo_alarmaslog)
+#	
 def check_auths_log():
 	global gMYMAIL
 	p =subprocess.Popen("cat /var/log/secure | grep -i \"authentication failure\"", stdout=subprocess.PIPE, shell=True)
@@ -461,6 +650,18 @@ def check_auths_log():
 		send_email(gMYMAIL,'Alert Type 1 : Authentication failure',body)
 	
 
+
+
+#Funcion: send_email
+#
+#	Establece una conexion con el servidor de email y envia un email desde un correo especifico.
+#	Se utiliza para alertar al usuario en caso de encontrar algo sospechoso.
+#
+#Parametros:
+#	email	(string) direccion de correo a la cual se enviara el correo.
+#	subject	(string) el subject del correo.
+#	body	(string) el contenido del correo. Vendria siendo el mensaje en si.
+#
 def send_email(email,subject,body):
 	global gPASS
 	my_address = 'so2hips2020@gmail.com'
@@ -477,10 +678,30 @@ def send_email(email,subject,body):
 	del msg
 	s.quit()
 
+
+
+#Funcion: send_to_quarentine
+#
+#	Mueve un archivo al directorio de cuarentena.
+#
+#Parametros:
+#	s_file	(string)el archivo (su absolute path) que se movera al directorio de cuarentena.
+#
 def send_to_quarentine(s_file):
+	global gQUARENT
 	#print (s_file+'--')
 	p =subprocess.Popen("mv "+s_file+" "+gQUARENT, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
+
+
+
+#Funcion: block_ip
+#
+#	Bloquea una ip dada utilizando IPTables.
+#
+#Parametros:
+#	ip	(string) la IP que se desea boquear o banear.
+#
 def block_ip(ip):
 	p =subprocess.Popen("iptables -A INPUT -s "+ip+" -j DROP", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
@@ -488,26 +709,112 @@ def block_ip(ip):
 	p =subprocess.Popen("service iptables save", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
+
+
+
+#Funcion: kill_process
+#
+#	Mata el proceso especificado.
+#
+#Parametros:
+#	pid	(string / int) process id del proceso a matar.
+#
 def kill_process(pid):
 	p =subprocess.Popen("kill -9 "+pid, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
+
+
+
+#Funcion: ban_email
+#
+#	Agrega una direccion de correo a la lista negra de postfix
+#
+#Parametros:
+#	email	(string) direccion de correo electronico que se desea agregar a la lista negra.
+#
 def ban_email(email):#verificar si es que no esta
 	p =subprocess.Popen("echo \""+email+" REJECT\">>/etc/postfix/sender_access", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
-def echo_alarmaslog(alarm, alarm_type,ip):
+
+
+
+#Funcion: echo_alarmaslog
+#
+#	Escribe en el log /var/log/hips/alarmas.log la alarma registrada.
+#
+#Parametros:
+#	alarm		(string) el mlensaje de alarma a registrar.
+#	alarm_type	(string) el tipo de la alarma (ej: AMTP attack).
+#	ip		(string) IP responsable de generar la alar,a (si es que hay ip, caso contrario ip = '')
+#
+def echo_alarmaslog(info, alarm_type,ip):
+	global g_my_user
+	global g_my_passwd
+	global g_my_db
+
 	if ip == '':
 		ip = "No IP Found"
-	msg = ''+datetime.now()+" :: "+alarm_type+" :: "+ip+" :: "+info
+	date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+	msg = ''+date_now+" :: "+alarm_type+" :: "+ip+" :: "+info
 	p =subprocess.Popen("echo \""+msg+"\">>/var/log/hips/alarmas.log", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
+	
+	try:
+		conn = psycopg2.connect(database=g_my_db, user=g_my_user, password=g_my_passwd)
+		cursor = conn.cursor()
+		query_s = "INSERT INTO alarms (time,alarm) VALUES (TO_TIMESTAMP('"+date_now+"','YYYY-MM-DD HH24:MI:SS'),'"+msg+"');"
+		#print (query_s)
+		cursor.execute(query_s)
+		conn.commit()
+		cursor.close()
+		conn.close()	
+	except:
+		print("\n\n\nSomething went wrong. Please check your credentials and try again\n\n\n")
+	
 
+
+
+
+#Funcion: echo_prevencionlog
+#
+#	Escribe en el log /var/log/hips/prevencion.log las medidas de prevencion tomadas debido a una alarma detectada.
+#
+#Parametros:
+#	info	(string) decision tomada (ej: se bloqueo la ip xxx.xxx.xxx.xxx)
+#	reason	(string) motivo por el cual se tomo la decision.
+#		Similar al parametro alarm_type de echo_alarmaslog.
+#
 def echo_prevencionlog(info, reason):
-	msg = ''+datetime.now()+" :: "+info+" :: Reason --> "+reason
+	global g_my_user
+	global g_my_passwd
+	global g_my_db
+	
+	date_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+	msg = ''+date_now+" :: "+info+" :: Reason --> "+reason
 	p =subprocess.Popen("echo \""+msg+"\">>/var/log/hips/prevencion.log", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
+	try:
+		conn = psycopg2.connect(database=g_my_db, user=g_my_user, password=g_my_passwd)
+		cursor = conn.cursor()
+		query_s = "INSERT INTO prevention (time,action) VALUES (TO_TIMESTAMP('"+date_now+"','YYYY-MM-DD HH24:MI:SS'),'"+msg+"');"
+		#print (query_s)
+		cursor.execute(query_s)
+		conn.commit()
+		cursor.close()
+		conn.close()
+	except:
+		print("\n\n\nSomething went wrong. Please check your credentials and try again\n\n\n")
+
+
+
+
+#Funcion: main
+#
+#	Invoca a todas las funciones necesarias para el HIPS repitiendose cada x intervalo de tiempo
+#
 def main():
 	global gQUARENTMAIL
 	global gQUARENT
@@ -537,12 +844,12 @@ def main():
 	#is_program("wget")
 	#is_program("asdfgh")
 	#check_promisc(P_DIR, P_APP_LIST)
-	#process_usage(PROCESS_USAGE_LIMITS)
+	process_usage(PROCESS_USAGE_LIMITS)
 	#check_ip_connected()
 	#check_invalid_dir(MY_IP) #www.algo.com/noexiste
 	#check_promisc_apps(P_APP_LIST)
 	#check_md5sum(MD5SUM_LIST)
-	#check_tmp_dir()
+	check_tmp_dir()
 	#check_auths_log()
 	#ban_email("hola@something")
 	#ban_email("chau@something")

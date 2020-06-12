@@ -1,3 +1,10 @@
+<?php
+	session_start();
+	if(isset($_SESSION['S_USERNAME']) && !empty($_SESSION['S_USERNAME'])){
+		header("Location: welcome.php");
+	}
+?>
+
 <!DOCTYPE html>
 <html>
 	<head>
@@ -38,6 +45,9 @@
 				width: 40%;
 				border-radius: 50%;
 			}
+			.failedlogin{
+				color:red;
+			}
 
 		</style>
 
@@ -46,18 +56,26 @@
 	</head>
 	<body>
 		<form action="connect.php" method="post">
-			<div class="c_imgcontainer">
-				<img src="" alt="Avatar" class="c_avatar" />
+			<div class="imgcontainer">
+				<img src="" alt="Avatar" class="avatar" />
 			</div>
-			<div class=c_container">
+			<div class=container">
 				<label><b>Username:</b></label>
 				<input type="text" placeholder="Enter Username" name="username" required />
 				<br/>
 				<label><b>Password:&nbsp</b></label>
 				<input type="password" placeholder="**********" name="password" required />
 				<br/>
-				<button type="submit">Login</button>
+				<button type="submit" name="Login">Login</button>
 			</div>
+			<div class="failedlogin">
+				<?php if(isset($_SESSION['INCORRECT'])){echo "Incorrect username or password.";}?>		
+			</div>
+			Beta
 		</form>
 	</body>
+<script>
+sessionStorage.setItem("currentSelection",'dangerapp');
+</script>
 </html>
+
