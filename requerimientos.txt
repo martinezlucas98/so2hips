@@ -32,3 +32,14 @@ INSERT INTO login (usr, pass) VALUES ('sysadmin','systemso2');
 
 crear user en postgres con el nombre de public_user con passwd ""
 
+
+Configurar blacklist de postfix (como root)
+cd /etc/postfix
+postman hash:sender_access
+###open main.cf and add:
+smtpd_recipient_restrictions = check_sender_access hash:/etc/postfix/sender_access
+###Save and close then:
+service postfix restart
+
+
+crear con root el directorio /var/log/hips
