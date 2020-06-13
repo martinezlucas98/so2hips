@@ -11,14 +11,15 @@ import time
 from datetime import datetime
 import random
 import string
+from getpass import getpass
 
 #Variables globales
 
 #gPASS	(string) almacena la contrasenha del correo que envia las alertas
-gPASS = 'holamundo123'
+gPASS = ''#'holamundo123'
 
 #gMYMAIL	(string) direccion de correo electronico al cual mandar las alertas
-gMYMAIL = 'so2hips2020@gmail.com'
+gMYMAIL = ''#'so2hips2020@gmail.com'
 
 #gQUARENTMAIL	(string) informacion: todos los archivos mandados a cuarentena
 gQUARENTMAIL = ''
@@ -27,8 +28,8 @@ gQUARENTMAIL = ''
 gQUARENT = ''
 
 
-g_my_user = 'root'
-g_my_passwd = 'testpwd'
+g_my_user = 'postgres'#'root'
+g_my_passwd = ''#'testpwd'
 g_my_db = 'hipsdb'
 
 
@@ -41,15 +42,20 @@ def connect_to_db():
 	global g_my_user
 	global g_my_passwd
 	global g_my_db
-	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : '', 'md5sum': []}
+
+	global gMYMAIL
+	global gPASS
+
+	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : -1, 'md5sum': [], 'max_ssh' : -1, 'max_fuzz' : -1}
 	credential_ok=False
 	while(credential_ok is not True):
 		print("Please enter the following data (press enter for default value)\n")
 		#my_host = input("Enter host (default: localhost) :  ")
 		#my_port = int(input("Enter port (default: 5432) :  "))
-		my_user = input("Enter username (default postgres) :  ")
-		my_passwd = input("Enter password (default postgres) :  ")
-		my_db = input("Enter database (default postgres) :  ")
+		g_my_user = input("Enter username (default: postgres) :  ")
+		#g_my_passwd = input("Enter password :  ")
+		g_my_passwd = getpass("Enter password :  ")
+		#my_db = input("Enter database (default postgres) :  ")
 		try:
 			conn = psycopg2.connect(database=g_my_db, user=g_my_user, password=g_my_passwd)
 			credential_ok = True
@@ -88,6 +94,10 @@ def connect_to_db():
 	for row in data:
 		preferences_dict['myip'] = row[0]
 		preferences_dict['maxmailq'] = row[1]
+		gMYMAIL = row[2]
+		gPASS = row[3]
+		preferences_dict['max_ssh'] = row[4]
+		preferences_dict['max_fuzz'] = row[5]
 
 	cursor.execute(md5sum_create_query)
 	data = cursor.fetchall()
@@ -155,14 +165,23 @@ def check_files_is_program(list):
 #	MAX_Q_COUNT	(int) numero maximo de mails que pueden estar en cola
 #
 def check_mailq(MAX_Q_COUNT):
+	global gMYMAIL
 	p = subprocess.Popen("mailq", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	print(output.decode("utf-8"))
+	#print(output.decode("utf-8"))
 	#print('\n')
 	mail_list = output.decode("utf-8").splitlines()
-	if len(mail_list) > MAX_Q_COUNT:
+	if MAX_Q_COUNT >-1 and len(mail_list) > MAX_Q_COUNT:
 		print("Do something\n")
-
+		#p = subprocess.Popen("postsuper -d ALL", stdout=subprocess.PIPE, shell=True)
+		p = subprocess.Popen("service postfix stop", stdout=subprocess.PIPE, shell=True)
+		(output, err) = p.communicate()
+		info = "Email Queue reached limit of "+MAX_Q_COUNT+" mails."
+		preven = "Postfix service stopped"
+		send_email(gMYMAIL,'Alert Type 3 : Email Queue Reached Limit',info+"\n\n"+preven+".\nPlease check.")
+		echo_alarmaslog(info , "Posible DoS/DDoS attack",'')
+		echo_prevencionlog(preven, "Posible DoS/DDoS attack")
+		
 
 
 #Funcion: check_smtp_maillog
@@ -473,7 +492,7 @@ def check_ip_connected():
 #Parametros:
 #	MY_IP	(string)IP de la maquina servidor. Para obviarla de la busqueda de intentos fallidos.
 #
-def check_invalid_dir(MY_IP):
+def check_invalid_dir(MY_IP,limit):
 	counts = dict()
 	ip_list = list()
 	p = subprocess.Popen("cat /var/log/httpd/access_log | grep -v "+MY_IP+" | grep -v ::1 | grep 404", stdout=subprocess.PIPE, shell=True)
@@ -491,10 +510,10 @@ def check_invalid_dir(MY_IP):
 	for ip in ip_list:
 		if ip in counts:
 			counts[ip]+=1
-			if counts[ip] == 5 :
+			if counts[ip] == limit :
 				block_ip(ip)
 				body = body + '\n'+ip
-			echo_alarmaslog("Ip "+ip+" tried 5 non-existent directories on web server", "Fuzzing atack",ip)
+			echo_alarmaslog("Ip "+ip+" tried "+limit+" non-existent directories on web server", "Fuzzing atack",ip)
 			echo_prevencionlog(ip+" was blocked using IPTables","Fuzzing atack")
 		else:
 			counts[ip]=1
@@ -811,7 +830,7 @@ def check_cron_jobs(P_APP_LIST):
 #Parametros:
 #	MY_IP	(string)IP de la maquina servidor. Para obviarla de la busqueda de intentos fallidos.
 #
-def check_failed_ssh(MY_IP):
+def check_failed_ssh(MY_IP,limit):
 	global gMYMAIL
 	counts = dict()
 	ip_list = list()
@@ -828,14 +847,14 @@ def check_failed_ssh(MY_IP):
 	for ip in ip_list:
 		if ip in counts:
 			counts[ip]+=1
-			if counts[ip] == 5 :
+			if counts[ip] == limit :
 				block_ip(ip)
 				body = body + '\n'+ip
-				echo_prevencionlog(ip+" was blocked using IPTables","SSH failed password more then 5 times")
+				echo_prevencionlog(ip+" was blocked using IPTables","SSH failed password more than "+limit+" times")
 				body_prevention = body_prevention + ip + "\n"
 		else:
 			counts[ip]=1
-	print (counts)
+
 	body = body + ret_msg
 	if body != '':
 		send_email(gMYMAIL,'Alert Type 2 : SSH authentication failure',body)
@@ -860,7 +879,8 @@ def check_failed_ssh(MY_IP):
 #
 def send_email(email,subject,body):
 	global gPASS
-	my_address = 'so2hips2020@gmail.com'
+	global gMYMAIL
+	my_address = gMYMAIL#'so2hips2020@gmail.com'
 	s = smtplib.SMTP('smtp.gmail.com', 587)
 	s.starttls()
 	s.login(my_address,gPASS)
@@ -1018,6 +1038,8 @@ def main():
 	gQUARENT = '/quarent'
 	MY_IP = data_list['myip']
 	MAX_Q_COUNT = data_list['maxmailq']
+	MAX_SSH = data_list['max_ssh']
+	MAX_FUZZ = data_list['max_fuzz']
 	P_DIR = '/var/log/messages'
 	P_APP_LIST = data_list['dangerapp']
 	PROCESS_USAGE_LIMITS = data_list['processlimits']
@@ -1042,7 +1064,7 @@ def main():
 	#check_promisc(P_DIR, P_APP_LIST)
 	#process_usage(PROCESS_USAGE_LIMITS)
 	#check_ip_connected()
-	#check_invalid_dir(MY_IP) #www.algo.com/noexiste
+	#check_invalid_dir(MY_IP,MAX_FUZZ) #www.algo.com/noexiste
 	#check_promisc_apps(P_APP_LIST)
 	#check_md5sum(MD5SUM_LIST)
 	#check_tmp_dir()
@@ -1051,13 +1073,13 @@ def main():
 	#ban_email("chau@something")
 	#check_cron_jobs(P_APP_LIST)
 	#print (P_APP_LIST)
-	check_failed_ssh(MY_IP)
+	#check_failed_ssh(MY_IP,MAX_SSH)
 	
 	
 	if gQUARENTMAIL != '':
 		send_email(gMYMAIL,'Files moved to quarentine',gQUARENTMAIL)
 
-	print('DONE')
+	print('SCAN COMPLETED')
 	return(0)
         
         
