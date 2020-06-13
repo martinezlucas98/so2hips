@@ -131,9 +131,13 @@ def connect_to_db():
 
 def is_program(name):
         #Ve si el archivo `name` existe
-        from shutil import which
-        print (which(name)) #is not None
-        print ('\n')
+	from shutil import which
+        #print (which(name)) #is not None
+        #print ('\n')
+	if (which(name) is not None):
+		print(which(name))
+		return (True)
+	return (False)
 
 #print(is_program("wget"))
 
@@ -334,8 +338,9 @@ def check_promisc_devs(P_DIR ):
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
 #Parametros:
-#	P_APP_LIST	(list)lista con el nombre de las aplicaciones de sniffers no deseadas.
-#			Estas seran buscadas.
+#	P_APP_LIST	(string) string con las aplicaciones consideradas peligrosas o no
+#			deseadas segun el usuario separadas por medio de "|".
+#			Se debe respetar el formato: app1|app2|app3.
 #
 def check_promisc_apps(P_APP_LIST):
 	p = subprocess.Popen("ps axo pid,command | grep -E '"+P_APP_LIST+"' | grep -v '"+P_APP_LIST+"'", stdout=subprocess.PIPE, shell=True)
@@ -363,6 +368,11 @@ def check_promisc_apps(P_APP_LIST):
 #	Invoca a las funciones encargadas de monitorear los modos promiscuos y sniffers.
 #	(Ver: check_promisc_devs y check_promisc_apps)
 #
+#Parametros:
+#	P_DIR	(string)directorio de donde buscar los dispositivos, Normalmente es /var/log/secure
+#	P_APP_LIST	(string) string con las aplicaciones consideradas peligrosas o no
+#			deseadas segun el usuario separadas por medio de "|".
+#			Se debe respetar el formato: app1|app2|app3
 def check_promisc(P_DIR, P_APP_LIST):
 	check_promisc_devs(P_DIR)
 	check_promisc_apps(P_APP_LIST)
@@ -502,8 +512,7 @@ def check_invalid_dir(MY_IP):
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
 #Parametros:
-#	P_APP_LIST	(list)lista con el nombre de las aplicaciones de sniffers no deseadas.
-#			Estas seran buscadas.
+#	MD5SUM_LIST	(list)lista con el hash producido mediante md5sum. Este se encuentra en el formato: hash dir
 #			
 def check_md5sum(MD5SUM_LIST):
 	body = ''
@@ -648,7 +657,148 @@ def check_auths_log():
 	body = body + ret_msg
 	if body != '':
 		send_email(gMYMAIL,'Alert Type 1 : Authentication failure',body)
+
 	
+
+#Funcion: is_script_cron
+#
+#	Analiza el string que recibe como parametro en busca de terminacionesclasicas de
+#	scripts (ejemplo: .py, .c, .exe, etc) y tambien terminaciones combinadas como .php.jpeg
+#
+#Parametros:
+#	line	(string) una linea leida utilizando el comando crontab -l. Se debe respetar el
+#		formato: * * * * * [USERNAME_ocional] DIRECTORIO_DE_SCRIPT
+#
+#Retorna:
+#	(string) un string vacio ('') si no se encontro una terminacion de script en el parametro
+#	o un string con la informacion de que se detecto un script en la linea pasada como parametro
+#
+def is_script_cron(line):
+	words = line.split()
+	path = words[-1]
+	exten = ['py','c','cpp','ruby','sh','exe','php','java','pl']
+	dirs = path.split("/")
+	script = dirs[-1]
+	my_extens = script.split(".")
+	my_extens.reverse()
+	for e in my_extens:
+		for e2 in exten:
+			if (e==e2):
+				if (os.path.isfile(path)):
+					info = "Posible script running on cron :: "+line+"\n"
+					alarm_type = "Suspicious script running on cron"
+					echo_alarmaslog(info, alarm_type,'')
+					return (info)
+	return ('')
+
+
+
+#Funcion: is_shell_cron
+#
+#	Analiza el string que recibe como parametro, extrae el PATH encontrado en el string
+#	y busca dentro de este archivo (si es que existe) el contenido '#!' que marca a los shells	
+#
+#Parametros:
+#	line	(string) una linea leida utilizando el comando crontab -l. Se debe respetar el
+#		formato: * * * * * [USERNAME_ocional] DIRECTORIO_DE_SCRIPT
+#
+#Retorna:
+#	(string) un string vacio ('') si el archivo ubicado en el path encontrado en la linea 
+#	pasada como parametro no es un shell
+#	o un string con la informacion de que se detecto un shell en la linea pasada como parametro
+#
+def is_shell_cron(line):
+	words = line.split()
+	path = words[-1]
+	cat =subprocess.Popen("cat "+path+" 2> /dev/null | grep '#!'", stdout=subprocess.PIPE, shell=True)
+	(output, err) = cat.communicate()
+	txt = output.decode("utf-8")
+	if(txt !=''):
+		info = "Posible shell running on cron:: "+line+"\n"
+		alarm_type = "Suspicious shell running on cron"
+		echo_alarmaslog(info, alarm_type,'')
+		return (info)
+
+	return ('')
+
+
+
+#Funcion: is_dangerapp_cron
+#
+#	Analiza el string que recibe como parametro y verifica si este ejecuta alguna de las
+#	aplicaciones consideradas peligrosas o no deseadas segun el usuario.
+#	Si los encuentra, alerta al usuario por mail.
+#	Guarda las alertas en el log correspondiente (Ver: echo_alarmaslog)
+#
+#Parametros:
+#	line	(string) una linea leida utilizando el comando crontab -l. Se debe respetar el
+#		formato: * * * * * [USERNAME_ocional] DIRECTORIO_DE_SCRIPT
+#	P_APP_LIST	(string) string con las aplicaciones consideradas peligrosas o no
+#			deseadas segun el usuario separadas por medio de "|".
+#			Se debe respetar el formato: app1|app2|app3
+#
+#Retorna:
+#	(string) un string vacio ('') si el archivo encontrado en la linea pasada como 
+#	parametro no ecorresponde a una de las aplicaciones citadas en P_APP_LIST
+#	o un string con la informacion de que se detecto una posible aplicacion no deseada en
+#	la linea pasada como parametro
+#
+def is_dangerapp_cron(line, P_APP_LIST):
+	words = line.split()
+	path = words[-1]
+	dirs = path.split("/")
+	app = dirs[-1]
+	for e in P_APP_LIST:
+		if (e==app):
+			info = "Malicious tool running on cron :: "+line+"\n"
+			alarm_type = "Suspicious tool running on cron"
+			echo_alarmaslog(info, alarm_type,'')
+			return (info)
+	return ('')
+	
+
+
+
+
+#Funcion: check_cron_jobs
+#
+#	Analiza las lineas retornadas por el comando crontab -l en busca de scripts, shells y
+#	aplicaciones o herramientas consideradas peligrosas o no deseadas por el usuario.
+#	Lo hace invocando a las funciones is_script_cron , is_shell_cron , is_dangerapp_cron
+#	Si los encuentra, alerta al usuario por mail.
+#	Guarda las alertas en el log correspondiente (Ver: echo_alarmaslog)
+#
+#Parametros:
+#	P_APP_LIST	(string) string con las aplicaciones consideradas peligrosas o no
+#			deseadas segun el usuario separadas por medio de "|".
+#			Se debe respetar el formato: app1|app2|app3
+#
+def check_cron_jobs(P_APP_LIST):
+	global gMYMAIL
+	app_list = P_APP_LIST.split("|")
+	p =subprocess.Popen("crontab -l", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	ret_msg = output.decode("utf-8")
+	body_scripts = ''
+	body_shells = ''
+	body_dangerapp = ''
+	for line in ret_msg.splitlines():
+		this = is_shell_cron(line)
+		if (this != ''):
+			body_shells = body_shells + this
+		#else:
+		this = is_script_cron(line)
+		if (this != ''):
+			body_scripts = body_scripts + this
+		#else
+		this = is_dangerapp_cron(line, app_list)
+		if (this != ''):
+			body_dangerapp = body_dangerapp + this
+			
+	body = body_scripts + body_shells + body_dangerapp
+	if (body != ''):
+		body = ""+body+"\nPlease verify and take action."
+		send_email(gMYMAIL,'Alert Type 3 : Suspicious files on Cron',body)
 
 
 
@@ -844,15 +994,18 @@ def main():
 	#is_program("wget")
 	#is_program("asdfgh")
 	#check_promisc(P_DIR, P_APP_LIST)
-	process_usage(PROCESS_USAGE_LIMITS)
+	#process_usage(PROCESS_USAGE_LIMITS)
 	#check_ip_connected()
 	#check_invalid_dir(MY_IP) #www.algo.com/noexiste
 	#check_promisc_apps(P_APP_LIST)
 	#check_md5sum(MD5SUM_LIST)
-	check_tmp_dir()
+	#check_tmp_dir()
 	#check_auths_log()
 	#ban_email("hola@something")
 	#ban_email("chau@something")
+	#check_cron_jobs(P_APP_LIST)
+	#print (P_APP_LIST)
+	
 	
 	if gQUARENTMAIL != '':
 		send_email(gMYMAIL,'Files moved to quarentine',gQUARENTMAIL)
