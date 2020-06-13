@@ -466,8 +466,8 @@ def check_ip_connected():
 #Funcion: check_invalid_dir
 #
 #	Verifica si alguna maquina se encuentra realizando fuzzling. Luego de 5 intentos fallidos de
-#	acceder a un directorio de la pagina web del servidor, se alerta y bloquea la IP mediante
-#	el uso de IPTable
+#	acceder a un directorio de la pagina web del servidor, se alerta y bloquea la IP
+#	mediante el uso de IPTable (ver: block_ip)
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
 #Parametros:
@@ -802,6 +802,52 @@ def check_cron_jobs(P_APP_LIST):
 
 
 
+#Funcion: check_failed_ssh
+#
+#	Verifica si alguien ha intentado realizar un login a nuestra maquina via SSH y ha
+#	fracasado. Si ha fracasado 5 veces, se bloquea a dicha IP utilizando IPTables (ver: block_ip) y alerta via mail.
+#	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
+#
+#Parametros:
+#	MY_IP	(string)IP de la maquina servidor. Para obviarla de la busqueda de intentos fallidos.
+#
+def check_failed_ssh(MY_IP):
+	global gMYMAIL
+	counts = dict()
+	ip_list = list()
+	p =subprocess.Popen("cat /var/log/secure | grep -i \"ssh\" | grep -i \"Failed password\" | grep -v \""+MY_IP+"\"", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	ret_msg = output.decode("utf-8")
+	body = ''
+	body_prevention = ''
+	for line in ret_msg.splitlines():
+		the_ip = line.split(" ")[-4] #la ip se encuentra en la posicion -4 del string
+		ip_list.append(the_ip)
+		echo_alarmaslog(line, "SSH authentication failure",the_ip)
+		
+	for ip in ip_list:
+		if ip in counts:
+			counts[ip]+=1
+			if counts[ip] == 5 :
+				block_ip(ip)
+				body = body + '\n'+ip
+				echo_prevencionlog(ip+" was blocked using IPTables","SSH failed password more then 5 times")
+				body_prevention = body_prevention + ip + "\n"
+		else:
+			counts[ip]=1
+	print (counts)
+	body = body + ret_msg
+	if body != '':
+		send_email(gMYMAIL,'Alert Type 2 : SSH authentication failure',body)
+
+	if body_prevention != '':
+		body_prevention = "The following IP's were blocked using IPTables :: SSH failed password" + body_prevention
+		send_email(gMYMAIL,'Alert Type 3 : SSH blocked IP',body_prevention)
+	
+	
+
+
+
 #Funcion: send_email
 #
 #	Establece una conexion con el servidor de email y envia un email desde un correo especifico.
@@ -1005,6 +1051,7 @@ def main():
 	#ban_email("chau@something")
 	#check_cron_jobs(P_APP_LIST)
 	#print (P_APP_LIST)
+	check_failed_ssh(MY_IP)
 	
 	
 	if gQUARENTMAIL != '':
