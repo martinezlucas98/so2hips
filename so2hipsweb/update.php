@@ -19,7 +19,11 @@ if(isset($_POST['addDangerapp'])){
 }elseif(isset($_POST['addGeneral'])){
 	$ipv4 = $_POST['ipv4'];
 	$maxmailq = $_POST['maxmailq'];
-	$updateQuery = "DElETE FROM general WHERE myipv4 IS NOT NULL;INSERT INTO general (myipv4,maxmailq) VALUES ('$ipv4','$maxmailq');";
+	$email = $_POST['email'];
+	$email_pass = $_POST['email_pass'];
+	$max_ssh = $_POST['max_ssh'];
+	$max_fuzz = $_POST['max_fuzz'];
+	$updateQuery = "DElETE FROM general WHERE myipv4 IS NOT NULL;INSERT INTO general (myipv4,maxmailq,email,email_pass,max_ssh,max_fuzz) VALUES ('$ipv4','$maxmailq','$email','$email_pass','$max_ssh','$max_fuzz');";
 	unset($_POST['addGeneral']);
 	echo "general done";
 }elseif(isset($_POST['addMd5sum'])){

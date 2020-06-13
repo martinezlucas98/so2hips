@@ -138,8 +138,14 @@
 			<br/>
 			<br/>
 			<form action="update.php" method="post">
-				<input type="text" placeholder="New IPv4" name="ipv4" required />
-				<input type="text" placeholder="New Max mail queue" name="maxmailq" required />
+				<input type="text" placeholder="New IPv4" name="ipv4" required/>
+				<input type="text" placeholder="New Admin Email" name="email" required/>
+				<input type="text" placeholder="New Admin Email Password" name="email_pass" required/>
+				<br/>
+				<br/>
+				<input type="text" placeholder="New Max Mail Queue" name="maxmailq" required/>
+				<input type="text" placeholder="New Max SSH" name="max_ssh" required/>
+				<input type="text" placeholder="New Max Fuzz" name="max_fuzz" required/>
 				<button type="submit" name="addGeneral">Update</button>
 			</form>
 			<br/>
@@ -148,7 +154,8 @@
 			<table style="width:100%">
 				<tr>
 					<th>My IPv4</th>
-					<th>Max Mail Queue</th>
+					<th>Admin Email</th>
+					<th>Admin Email Password</th>
 				</tr>
 			<?php
 
@@ -156,10 +163,29 @@
 				if (!$result){echo "3";}
 				while ($row = pg_fetch_row($result)){
 					//echo "<br> <b>My IPv4:</b> ".$row[0]." <b>Max mail queue:</b> ".$row[1]."<br>";
-					echo "<tr><td>".$row[0]."</td><td>".$row[1]."</td></tr>";
+					echo "<tr><td>".$row[0]."</td><td>".$row[2]."</td><td>".$row[3]."</td></tr>";
 				}
 			?>
 			</table>
+			<br/>
+			<br/>
+			<table style="width:100%">
+				<tr>
+					<th>Max Mail Queue</th>
+					<th>Max SSH Attempts</th>
+					<th>Max Fuzz Attempts</th>
+				</tr>
+			<?php
+
+				$result = pg_query($dbconn, "SELECT * FROM general;");
+				if (!$result){echo "3";}
+				while ($row = pg_fetch_row($result)){
+					//echo "<br> <b>My IPv4:</b> ".$row[0]." <b>Max mail queue:</b> ".$row[1]."<br>";
+					echo "<tr><td>".$row[1]."</td><td>".$row[4]."</td><td>".$row[5]."</td></tr>";
+				}
+			?>
+			</table>
+			
 
 		</div>
 
