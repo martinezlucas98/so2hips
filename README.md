@@ -23,7 +23,7 @@ So2hips es un sistema de prevención de instrusos (para el host) elaborado compl
 
 ### Requerimientos
 Para que So2hips funcione correctamente es necesario que el usuario cuente con algunas librerias especificas y una base de datos PostgreSQL.  
-A continuación veremos como isntalar estas librerias y configurar el sistema.
+A continuación veremos como instalar estas librerias y configurar el sistema.
 
 Aclaracion: el proceso de instalación está explicado para CENTOS/RHE (utilizando yum install). Si cuenta con otra distribución de Linux, utilice el comando adecuando (ejemplo: apt-get install)
 
@@ -50,13 +50,13 @@ En caso de que no cuente con el repositorio necesario (suele ocurrir en CentOS) 
 
 #### Psutil
 La libreria de python de psutil es necesaria para que So2hips pueda ejecutar los comandos en linux correctamente.  
-Ejecutamos: `pip3 isntall psutil`
+Ejecutamos: `pip3 install psutil`
 
 
 #### PostgreSQL
 So2hips se conecta directamente a una base PostgreSQL, por lo que es necesaria contar con una de antemano.  
 Lo conseguimos ejecutando los dos siguientes comandos:  
-`sudo yum isntall postgresql-client`  
+`sudo yum install postgresql-client`  
 `sudo yum install postgres1l-devel`
 
 Levantamos el servicio de postgres: `sudo systemctl start postgresql`
