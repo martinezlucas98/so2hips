@@ -27,7 +27,7 @@ A continuación veremos como isntalar estas librerias y configurar el sistema.
 
 Aclaracion: el proceso de instalación está explicado para CENTOS/RHE (utilizando yum install). Si cuenta con otra distribución de Linux, utilice el comando adecuando (ejemplo: apt-get install)
 
-##### Python3
+#### Python3
 Como So2hips fue desarrollado completamente en Python3 requiere que el ordenador/servidor cuente con Python3 instalado.
 
 Para instalarlo ejecutamos el comando: `sudo yum install python3`
@@ -35,12 +35,12 @@ Para instalarlo ejecutamos el comando: `sudo yum install python3`
 También necesitaremos las herramientas de desarrollador de python 3: `sudo yum install python3python3-devel`
 
 
-##### GCC
+#### GCC
 Como es lógico, el ordenador/servidor debe contar con GCC para la correcta ejecución de los scripts
 `sudo yum install gcc`
 
 
-##### PIP3
+#### PIP3
 El ordenador/servidor debe contar con pip3 para poder instalar librerias de python.  
 Instalamos pip3: `sudo yum install python3-pip`
 
@@ -48,12 +48,12 @@ En caso de que no cuente con el repositorio necesario (suele ocurrir en CentOS) 
 `sudo yum install epel-release`
 
 
-##### Psutil
+#### Psutil
 La libreria de python de psutil es necesaria para que So2hips pueda ejecutar los comandos en linux correctamente.  
 Ejecutamos: `pip3 isntall psutil`
 
 
-##### PostgreSQL
+#### PostgreSQL
 So2hips se conecta directamente a una base PostgreSQL, por lo que es necesaria contar con una de antemano.  
 Lo conseguimos ejecutando los dos siguientes comandos:  
 `sudo yum isntall postgresql-client`  
@@ -86,11 +86,11 @@ Nos conectamos a la base de datos ejecutando: `psql`
 Ahora podemos ejecutar queries como de costumbre.
 
 
-##### Creación de la base de datos
+#### Creación de la base de datos
 La base de datos que utiliza So2hips se debe llamar hipsdb  
 La creamos ejecutando: `CREATE DATABASE hipsdb;`
 
-### Creación de las tablas necesarias
+#### Creación de las tablas necesarias
 Ejecutando los siguientes comandos crearemos todas las tablas mencionadas anteriormente:  
 `CREATE TABLE dangerapp (names varchar(25));`  
 `CREATE TABLE processlimits (name varchar(25),cpu real, mem real, maxtime bigint);`  
@@ -99,7 +99,7 @@ Ejecutando los siguientes comandos crearemos todas las tablas mencionadas anteri
 `CREATE TABLE alarms (time TIMESTAMP, alarm varchar);`  
 `CREATE TABLE prevention (time TIMESTAMP, action varchar);`  
 
-### Población de las tablas
+#### Población de las tablas
 Para evitar inconvenientes es necesario poblar la tabla _general_ con la IP del ordenador/servidor.  
 Lo hacemos mediante el siguiente comando:  
 `INSERT INTO general (myipv4) VALUES ('your_ip_here');`  
@@ -114,7 +114,7 @@ Por lo que recomendamos cargarlos a la tabla de _dangerapp_. Si quiere hacerlo, 
 \*Usted puede editar las tablas cuando desee por lo que no es necesario agregarlo ahora mismo\*
 
 
-### Creación de un usuario
+#### Creación de un usuario
 Ahora debemos crear un usuario para acceder a la base de datos. Este usuario junto con su contraseña también seran las credenciales para iniciar sesión en la página web para adminsitrar las tablas.
 
 Para crear un usuario ejecutamos: `CREATE USER your_username_here WITH PASSWORD 'your_password_here';`  
@@ -160,7 +160,7 @@ Reiniciamos el servidor postgres para que se actualicen los cambios realizados e
 So2hips necesita de algunos archivos y directorios que usted debe crearlos.
 
 
-##### POSTFIX Blacklist
+#### POSTFIX Blacklist
 Necesitamos crear o habilitar el archivo de lista d=negra de POSTFIX para almacenar los mails banneados/bloqueados.
 
 Cambiamos de directorio: `sudo cd /etc/postfix`  
@@ -173,7 +173,7 @@ Reiniciamos el servicio de postfix para que se actualicen los cambios: `service 
 
 
 
-##### Creación del directorio y archivos para los log
+#### Creación del directorio y archivos para los log
 'sudo mkdir /var/log/hips'  
 'sudo touch /var/log/hips/alarmas_log'  
 'sudo touch /var/log/hips/prevencion_log'  
