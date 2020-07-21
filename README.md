@@ -94,7 +94,7 @@ La creamos ejecutando: `CREATE DATABASE hipsdb;`
 Ejecutando los siguientes comandos crearemos todas las tablas mencionadas anteriormente:  
 `CREATE TABLE dangerapp (names varchar(25));`  
 `CREATE TABLE processlimits (name varchar(25),cpu real, mem real, maxtime bigint);`  
-`CREATE TABLE general (myipv4 varchar(15),maxmailq int);`  
+`CREATE TABLE general (myipv4 varchar(15),maxmailq int,email varchar,email_pass varchar,max_ssh int,max_fuzz int);`  
 `CREATE TABLE md5sum (dir varchar, hash varchar);`  
 `CREATE TABLE alarms (time TIMESTAMP, alarm varchar);`  
 `CREATE TABLE prevention (time TIMESTAMP, action varchar);`  
