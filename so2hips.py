@@ -1,3 +1,6 @@
+# So2hips v1.1.1
+# By Lucas Martinez
+
 import os
 import subprocess
 import psutil
@@ -16,25 +19,34 @@ from getpass import getpass
 #Variables globales
 
 #gPASS	(string) almacena la contrasenha del correo que envia las alertas
-gPASS = ''#'holamundo123'
+gPASS = ''
 
 #gMYMAIL	(string) direccion de correo electronico al cual mandar las alertas
-gMYMAIL = ''#'so2hips2020@gmail.com'
+gMYMAIL = ''
 
 #gQUARENTMAIL	(string) informacion: todos los archivos mandados a cuarentena
 gQUARENTMAIL = ''
 
 #gQUARENT	(string) absolute path del directorio de cuarentena
-gQUARENT = ''
+gQUARENT = '/etc/quarent'
 
+#g_my_user	(string) el usuario que se utilizara para contectarse a postgres. Por default su valor es: postgres
+g_my_user = 'postgres'
 
-g_my_user = 'postgres'#'root'
-g_my_passwd = ''#'testpwd'
+#g_my_passwd	(string) la contrasenha del usuario g_my_user para conectarse a la base de datos de postgres
+g_my_passwd = ''
+
+#g_my_db	(string) el nombre de la base de datos a la cual nos estariamos conectando. So2hips utiliza la base de datos 'hipsdb'
 g_my_db = 'hipsdb'
 
+#gMAXCPU	(float) maximo porcentae de CPU que un proceso puede consumir por defecto. Esto varia si se asigna al proceso valores personalizados.
 gMAXCPU = 90.000
+
+#gMAXCPU	(float) maximo porcentae de memoria RAM que un proceso puede consumir por defecto. Esto varia si se asigna al proceso valores personalizados.
 gMAXMEM = 90.000
 
+#gBAKCUPHASHES	(string) path del directorio donde se guardaran las copias de los archivos con hashses generados
+gBACKUPHASHES = '/etc/backup_hashes_files'
 
 
 
@@ -53,6 +65,7 @@ def connect_to_db():
 	global gMAXCPU
 	global gMAXMEM
 
+	#preferences_dict contiene los datos extraidos de la base de datos como la maxima longitud de la cola de mail, nuestra IP, maximo numero de intentos de fuzzing, etc. (Excluyendo aquellas asignadas en las variables globales)
 	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : -1, 'md5sum': [], 'max_ssh' : -1, 'max_fuzz' : -1, 'max_mail_pu' : -1}
 	credential_ok=False
 	while(credential_ok is not True):
@@ -74,7 +87,7 @@ def connect_to_db():
 	processlimits_query = "SELECT * FROM processlimits"
 	general_query = "SELECT * FROM general"
 	md5sum_query = "SELECT hash FROM md5sum"
-	md5sum_create_query = "SELECT dir FROM md5sum WHERE hash IS NULL"
+	md5sum_create_query = "SELECT dir FROM md5sum WHERE hash IS NULL OR hash=\'\'"
 	
 	cursor.execute(dangerapp_query)
 	data = cursor.fetchall()
@@ -113,6 +126,7 @@ def connect_to_db():
 	data = cursor.fetchall()
 	was_updated = False
 	for row in data:
+		print(row[0])
 		update_hash_query = 'UPDATE md5sum SET hash=\''+create_md5sum_hash(row[0])+'\' WHERE dir=\''+row[0]+'\';'
 		cursor.execute(update_hash_query)
 		was_updated = True
@@ -148,22 +162,6 @@ def connect_to_db():
 	return preferences_dict
 		
 		
-
-def is_program(name):
-        #Ve si el archivo `name` existe
-	from shutil import which
-        #print (which(name)) #is not None
-        #print ('\n')
-	if (which(name) is not None):
-		print(which(name))
-		return (True)
-	return (False)
-
-#print(is_program("wget"))
-
-def check_files_is_program(list):
-        #nothing yet
-        print('')
 
 
 
@@ -601,6 +599,7 @@ def check_md5sum(MD5SUM_LIST):
 		body = 'MD5SUM hash modified:\n\n' + body	
 		global gMYMAIL
 		send_email(gMYMAIL,'Alert Type 3 : MD5SUM Modified',body)
+		print(body+"\n")
 
 	
 	#print('\n')
@@ -611,6 +610,7 @@ def check_md5sum(MD5SUM_LIST):
 #Funcion: create_md5sum_hash
 #
 #	Crea un hash md5sum utilizando la funcion md5sum para un archivo en especifico
+#	Realiza una copia de seguridad del archivo en el directorio gBACKUPHASHES
 #
 #Parametros:
 #	dir_str	(string)absolute path del archivo al cual queremos crearle un hash md5sum.
@@ -619,10 +619,14 @@ def check_md5sum(MD5SUM_LIST):
 #	(string) el hash producido
 #
 def create_md5sum_hash(dir_str):
+	global gBACKUPHASHES
+	p =subprocess.Popen("cp -R "+dir_str+" "+gBACKUPHASHES+"/", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
 	p =subprocess.Popen("md5sum "+dir_str, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 	#print(output.decode("utf-8"))
 	#print('\n')
+	print(output.decode("utf-8")[:-1])
 	return output.decode("utf-8")[:-1]
 
 
@@ -1096,7 +1100,7 @@ def main():
 	global gMAXMEM
 	global gMAXCPU
 	data_list = connect_to_db()
-	gQUARENT = '/quarent'
+	gQUARENT = '/etc/quarent'
 	MY_IP = data_list['myip']
 	MAX_Q_COUNT = data_list['maxmailq']
 	MAX_MAIL_PU = data_list['max_mail_pu']
@@ -1122,8 +1126,6 @@ def main():
 	print("\n-------------------------\n\nSCANNING...\n\n-------------------------")
 	check_mailq(MAX_Q_COUNT)
 	check_smtp_attack(MAX_MAIL_PU)
-	#is_program("wget")
-	#is_program("asdfgh")
 	check_promisc(P_DIR, P_APP_LIST)
 	process_usage(PROCESS_USAGE_LIMITS)
 	check_ip_connected()
@@ -1132,15 +1134,10 @@ def main():
 	check_md5sum(MD5SUM_LIST)
 	check_tmp_dir()
 	check_auths_log()
-	#ban_email("hola@something")
-	#ban_email("chau@something")
 	check_cron_jobs(P_APP_LIST)
-	#print (P_APP_LIST)
 	check_failed_ssh(MY_IP,MAX_SSH)
 	
-	#print(gMAXCPU)
-	#print(gMAXMEM)
-	#print(MAX_MAIL_PU)
+	# gQUARENTMAIL aun no ha sido implementado en esta version
 	if gQUARENTMAIL != '':
 		send_email(gMYMAIL,'Files moved to quarentine',gQUARENTMAIL)
 
