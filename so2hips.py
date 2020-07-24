@@ -32,6 +32,10 @@ g_my_user = 'postgres'#'root'
 g_my_passwd = ''#'testpwd'
 g_my_db = 'hipsdb'
 
+gMAXCPU = 90.000
+gMAXMEM = 90.000
+
+
 
 
 #Funcion: connect_to_db
@@ -46,7 +50,10 @@ def connect_to_db():
 	global gMYMAIL
 	global gPASS
 
-	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : -1, 'md5sum': [], 'max_ssh' : -1, 'max_fuzz' : -1}
+	global gMAXCPU
+	global gMAXMEM
+
+	preferences_dict = {'dangerapp':'', 'processlimits':[], 'myip':'', 'maxmailq' : -1, 'md5sum': [], 'max_ssh' : -1, 'max_fuzz' : -1, 'max_mail_pu' : -1}
 	credential_ok=False
 	while(credential_ok is not True):
 		print("Please enter the following data (press enter for default value)\n")
@@ -98,6 +105,9 @@ def connect_to_db():
 		gPASS = row[3]
 		preferences_dict['max_ssh'] = row[4]
 		preferences_dict['max_fuzz'] = row[5]
+		preferences_dict['max_mail_pu'] = row[6]
+		gMAXCPU = row[7]
+		gMAXMEM = row[8]
 
 	cursor.execute(md5sum_create_query)
 	data = cursor.fetchall()
@@ -172,7 +182,7 @@ def check_mailq(MAX_Q_COUNT):
 	#print('\n')
 	mail_list = output.decode("utf-8").splitlines()
 	if MAX_Q_COUNT >-1 and len(mail_list) > MAX_Q_COUNT:
-		print("Do something\n")
+		#print("Do something\n")
 		#p = subprocess.Popen("postsuper -d ALL", stdout=subprocess.PIPE, shell=True)
 		p = subprocess.Popen("service postfix stop", stdout=subprocess.PIPE, shell=True)
 		(output, err) = p.communicate()
@@ -181,6 +191,7 @@ def check_mailq(MAX_Q_COUNT):
 		send_email(gMYMAIL,'Alert Type 3 : Email Queue Reached Limit',info+"\n\n"+preven+".\nPlease check.")
 		echo_alarmaslog(info , "Posible DoS/DDoS attack",'')
 		echo_prevencionlog(preven, "Posible DoS/DDoS attack")
+		print("Mail queue is full. Posible DoS/DDoS attack.\n")
 		
 
 
@@ -190,7 +201,7 @@ def check_mailq(MAX_Q_COUNT):
 #	y de ser asi lo pone en una lista negra y alerta. Lo hace revisando el archivo /var/log/maillog
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
-def check_smtp_maillog():
+def check_smtp_maillog(maxmailpu):
 	#banned_emails = list()
 	counts = dict()
 	#email_list = list()
@@ -199,24 +210,25 @@ def check_smtp_maillog():
 	ret_msg = output.decode("utf-8")
 	body = ''
 	for line in ret_msg.splitlines():
-		email = line.split(' ')[7]
+		email = line.split(' ')[-3]
 		email = email[7:-1] #quitamos el authid= y la coma del final
 		if email in counts:
 			counts[email]+=1
-			if counts[email] == 200: #numero arbitrario
+			if counts[email] == maxmailpu:
 				body = body+email+"\n"
 				ban_email(email)
 				#banned_emails.append(email)
 		else:
 			counts[email] = 1
 	if body != '' :
-		body = "More than 200 emails were sent using: " + body + "\n\n All emails added to blacklist."
+		body = "More than "+str(maxmailpu)+" emails were sent using: " + body + "\n\n All emails added to blacklist."
 		send_email(gMYMAIL,'Alert Type 1 : Masive email',body)
 	for key in counts:
 		aux = counts[key]
-		if aux >= 200:
-			echo_alarmaslog(aux+"emails sent using "+key, "SMTP attack",'')
+		if aux >= maxmailpu and maxmailpu >=0:
+			echo_alarmaslog(str(aux)+" emails sent using "+key, "SMTP attack",'')
 			echo_prevencionlog(key+" was added to postfix email blacklist", "SMTP attack")
+			print("Posible SMTP attack using: "+key+" . Added to blacklist: /etc/postfix/sender_access\n")
 
 
 
@@ -226,7 +238,7 @@ def check_smtp_maillog():
 #	Lo hace revisando el archivo /var/log/messages
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
-def check_smtp_messages():
+def check_smtp_messages(maxmailpu):
 	counts = dict()
 	#email_list = list()
 	p = subprocess.Popen("cat  /var/log/messages | grep -i \"[service=smtp]\" | grep -i \"auth failure\"", stdout=subprocess.PIPE, shell=True)
@@ -235,24 +247,28 @@ def check_smtp_messages():
 	body = ''
 	new_passwds = ''
 	for line in ret_msg.splitlines():
-		user = line.rsplit(' ')[5] #conseguimos [user=condorito]
-		user = user[6:-1] #aislamos el username del string anterior
+		user = line.split('=')[1] #conseguimos condorito] [service
+		user = user.split(']')[0] #aislamos el username del string anterior
 		if user in counts:
 			counts[user]+=1
-			if counts[user] == 200: #numero arbitrario
-				body = body+email+"\n"
+			if counts[user] == maxmailpu:
+				body = body+user+"\n"
 				#ban_email(email)
 				passwd = get_random_string(random.randint(20,30))
 				new_passwds = new_passwds + user + " :: " + passwd
+				p = subprocess.Popen("echo \""+user+":"+passwd+"\" | chpasswd 2> /dev/null", stdout=subprocess.PIPE, shell=True)
+				(output, err) = p.communicate()
 		else:
 			counts[user] = 1
 	if body != '' :
-		body = "More than 200 SMTP auth failure using: " + body + "\n\n All passwords from those users were changed:\n\nUsername :: New_Password\n"+new_passwds
+		body = "More than "+str(maxmailpu)+" SMTP auth failure using: " + body + "\n\n All passwords from those users were changed:\n\nUsername :: New_Password\n"+new_passwds
 		send_email(gMYMAIL,'Alert Type 1 : Masive SMTP user auth failure',body)
 	for key in counts:
 		aux = counts[key]
-		if aux >= 200:
-			echo_alarmaslog(aux+"Authentication failure for "+key, "SMTP attack",'')
+		if aux >= maxmailpu and maxmailpu >=0:
+			echo_alarmaslog(str(aux)+" authentication failures for "+key, "SMTP attack",'')
+			print(str(aux)+" authentication failures for: "+key+"\n")
+		print(body+"\n-------------------------------------------------\n\n")
 
 
 
@@ -262,7 +278,7 @@ def check_smtp_messages():
 #	Lo hace revisando el archivo /var/log/secure
 #	Guarda las alertas y las precauciones tomadas en los log correspondientes (Ver: echo_alarmaslog y echo_prevencionlog)
 #
-def check_smtp_secure():
+def check_smtp_secure(maxmailpu):
 	counts = dict()
 	#email_list = list()
 	p = subprocess.Popen("cat  /var/log/secure | grep -i \"(smtp:auth)\" | grep -i \"authentication failure\"", stdout=subprocess.PIPE, shell=True)
@@ -271,24 +287,27 @@ def check_smtp_secure():
 	body = ''
 	new_passwds = ''
 	for line in ret_msg.splitlines():
-		user = line.rsplit(' ')[1] #conseguimos user=condorito
-		user = user[5:] #aislamos el username del string anterior
+		user = line.split('=')[-1] #conseguimos el username condorito
 		if user in counts:
 			counts[user]+=1
-			if counts[user] == 200: #numero arbitrario
-				body = body+email+"\n"
+			if counts[user] == maxmailpu:
+				body = body+user+"\n"
 				#ban_email(email)
 				passwd = get_random_string(random.randint(20,30))
 				new_passwds = new_passwds + user + " :: " + passwd
+				p = subprocess.Popen("echo \""+user+":"+passwd+"\" | chpasswd 2> /dev/null", stdout=subprocess.PIPE, shell=True)
+				(output, err) = p.communicate()
 		else:
 			counts[user] = 1
 	if body != '' :
-		body = "More than 200 SMTP auth failure using: " + body + "\n\n All passwords from those users were changed:\n\nUsername :: New_Password\n"+new_passwds
+		body = "More than "+str(maxmailpu)+" SMTP auth failure using: " + body + "\n\n All passwords from those users were changed:\n\nUsername :: New_Password\n"+new_passwds
 		send_email(gMYMAIL,'Alert Type 1 : Masive SMTP user auth failure',body)
 	for key in counts:
 		aux = counts[key]
-		if aux >= 200:
-			echo_alarmaslog(aux+"Authentication failure for "+key, "SMTP attack",'')
+		if aux >= maxmailpu and maxmailpu >=0:
+			echo_alarmaslog(str(aux)+" authentication failures for "+key, "SMTP attack",'')
+			print(str(aux)+" authentication failures for: "+key+"\n")
+		print(body+"\n-------------------------------------------------\n\n")
 
 
 
@@ -298,10 +317,26 @@ def check_smtp_secure():
 #	Invoca a las funciones que buscan patrones de un posible ataque SMTP.
 #	(Ver: check_smtp_maillog , check_smtp_messages y check_smtp_secure)
 #
-def check_smtp_attack():
-	check_smtp_maillog()
-	check_smtp_messages()
-	check_smtp_secure()
+def check_smtp_attack(maxmailpu):
+	check_smtp_maillog(maxmailpu)
+	check_smtp_messages(maxmailpu)
+	check_smtp_secure(maxmailpu)
+
+
+#Funcion: get_random_string
+#
+#	genera un string con caraacteres aleatorios de longitud l
+#
+#Parametros:
+#		l	(int) longitud de la cadena deseada.
+#
+#Retorna:
+#		new_str	(string) la cadena de caracteres generada
+#
+def get_random_string(l):
+	letters = string.ascii_letters + "1234567890!@#$%^&*()-_=+"
+	new_str = ''.join(random.choice(letters) for i in range(l))
+	return (new_str)
 
 
 
@@ -345,6 +380,7 @@ def check_promisc_devs(P_DIR ):
 			global gMYMAIL
 			body = ''+device+' :: Promiscuous mode ON\n'
 			echo_alarmaslog("The device: "+device+" Promiscuous mode is ON", "Promiscuous mode on device ON",'')
+			print(''+device+' :: Promiscuous mode ON\n')
 		send_email(gMYMAIL,'Alert Type 2 : Promisc mode ON',body)
 			#print(''+device+' :: Promiscuous mode ON\n')
 
@@ -377,6 +413,7 @@ def check_promisc_apps(P_APP_LIST):
 	if len(body)>1:
 		body = 'Found sniffers services:\n'+body+"\nAll sniffers were sent to quarentine"
 		send_email(gMYMAIL,'Alert Type 2 : Sniffers found',body)
+		print(body+"\n")
 	#print(output.decode("utf-8"))
 	#print('\n')	
 
@@ -414,21 +451,28 @@ def check_promisc(P_DIR, P_APP_LIST):
 #				create_time :	tiempo de creacion del proceso en POSIX
 #	
 def process_usage(PROCESS_USAGE_LIMITS):
+	global gMAXCPU
+	global gMAXMEM
 	process_list = list()
 	for proc in psutil.process_iter():
 		process_dict = proc.as_dict(attrs=['pid', 'name', 'cpu_percent', 'memory_percent', 'create_time'])
 		process_list.append(process_dict)
 	body = ''
 	for proc in process_list:
-		max_cpu = 90.000
-		max_mem = 90.000
+		max_cpu = gMAXCPU
+		max_mem = gMAXMEM
 		#max_runtime = 189900.000 #2 dias y 5hs aprox (esta en segundos)
 		max_runtime = -1.000
 		#print(proc)
-		if proc['name'].lower() in (dic['name'].lower() for dic in PROCESS_USAGE_LIMITS):
-			max_cpu = dic['cpu_max_usage']
-			max_mem = dic['mem_max_usage']
-			max_runtime = dic['max_run_time']
+		#if proc['name'].lower() in (dic['name'].lower() for dic in PROCESS_USAGE_LIMITS):
+			#max_cpu = dic['cpu_max_usage']
+			#max_mem = dic['mem_max_usage']
+			#max_runtime = dic['max_run_time']
+		for dic in PROCESS_USAGE_LIMITS:
+			if (proc['name'].lower() == dic['name'].lower()):
+				max_cpu = dic['cpu_max_usage']
+				max_mem = dic['mem_max_usage']
+				max_runtime = dic['max_run_time']
 		p_runtime = time.time() - proc['create_time']
 
 		exceeded = ''
@@ -446,12 +490,13 @@ def process_usage(PROCESS_USAGE_LIMITS):
 
 		if (p_runtime > max_runtime and max_runtime >=0.000) :
 			runtime_x = True
+			proc.update({'runtime':str(datetime.timedelta(seconds=int(p_runtime)))})
 			if exceeded != '':
 				exceeded=exceeded+' & Runtime'
 			else:
 				exceeded=exceeded+'Runtime'
 		if cpu_x or mem_x or runtime_x:
-			proc.update({'runtime':str(datetime.timedelta(seconds=int(p_runtime)))})
+			#proc.update({'runtime':str(datetime.timedelta(seconds=int(p_runtime)))})
 			proc.update({'reason': 'Exceeded: '+exceeded+' max value for this process'})
 
 			body+=json.dumps(proc)+'\n\n'
@@ -463,7 +508,7 @@ def process_usage(PROCESS_USAGE_LIMITS):
 		body = 'Elevated Process Usage Found:\n\n'+body
 		global gMYMAIL
 		send_email(gMYMAIL,'Alert Type 2 : Process Usage',body)
-		
+		print (body + "\n")
 
 		
 	#print('\n')
@@ -475,10 +520,13 @@ def process_usage(PROCESS_USAGE_LIMITS):
 #	Obtiene las IP (mediante netstat) de las maquinas conectadas al servidor
 #	
 def check_ip_connected():
-	IPs_connected = subprocess.Popen("netstat -tu 2>/dev/null", stdout=subprocess.PIPE, shell=True)
+	#IPs_connected = subprocess.Popen("netstat -tu 2>/dev/null", stdout=subprocess.PIPE, shell=True)
+	IPs_connected = subprocess.Popen("w -i 2>/dev/null", stdout=subprocess.PIPE, shell=True)
 	(output, err) = IPs_connected.communicate()
-	print(output.decode("utf-8"))
-	print('\n')
+	global gMYMAIL
+	send_email(gMYMAIL,'Machines Connected',output.decode("utf-8"))
+	print(output.decode("utf-8")+"\n")
+	#print('\n')
 
 
 
@@ -500,7 +548,7 @@ def check_invalid_dir(MY_IP,limit):
 	#print(output.decode("utf-8"))
 	#print('\n')
 	ret_msg = output.decode("utf-8")
-	print(ret_msg+"\n\n\n\n")
+	#print(ret_msg+"\n\n\n\n")
 	for line in ret_msg.splitlines():
 		#la primera palabra de cada linea es la ip
 		first_word = line.split(" ")[0]
@@ -513,8 +561,10 @@ def check_invalid_dir(MY_IP,limit):
 			if counts[ip] == limit :
 				block_ip(ip)
 				body = body + '\n'+ip
-			echo_alarmaslog("Ip "+ip+" tried "+limit+" non-existent directories on web server", "Fuzzing atack",ip)
-			echo_prevencionlog(ip+" was blocked using IPTables","Fuzzing atack")
+				echo_alarmaslog("Ip "+ip+" tried "+str(limit)+" non-existent directories on web server", "Fuzzing atack",ip)
+				echo_prevencionlog(ip+" was blocked using IPTables","Fuzzing atack")
+				print(ip+" was blocked using IPTables due to posible Fuzzing attack.\n")
+				
 		else:
 			counts[ip]=1
 	if body != '':
@@ -571,8 +621,8 @@ def check_md5sum(MD5SUM_LIST):
 def create_md5sum_hash(dir_str):
 	p =subprocess.Popen("md5sum "+dir_str, stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
-	print(output.decode("utf-8"))
-	print('\n')
+	#print(output.decode("utf-8"))
+	#print('\n')
 	return output.decode("utf-8")[:-1]
 
 
@@ -598,9 +648,9 @@ def find_shells(DIR):
 		(output, err) = cat.communicate()
 		txt = output.decode("utf-8")
 		if(txt !=''):
-			body +='Found posible script in: '+line+'\n'
+			body +='Found posible shell script in: '+line+'\n'
 			send_to_quarentine(line)
-			#print('Found posible script in: '+line)
+			print('Found posible shell script in: '+line+" -> File sent to quarentine.\n")
 			echo_alarmaslog("Shell found "+line, "Shell found on "+DIR,"")
 			echo_prevencionlog("File "+line+" moved to quarentine folder","Shell found on tmp")
 	global gMYMAIL
@@ -640,6 +690,7 @@ def find_scripts(DIR):
 	if body!='':
 		for line in scripts.splitlines():
 			send_to_quarentine(line)
+			print('Found posible script in: '+line+" -> File sent to quarentine.\n")
 			echo_alarmaslog("Script found "+line, "Script found on " +DIR,"")
 			echo_prevencionlog("File "+line+" moved to quarentine folder","Script found on tmp")
 		body = 'Found posible script file/s :\n'+body +"\nAll files were sent to quarentine."
@@ -671,10 +722,12 @@ def check_auths_log():
 	ret_msg = output.decode("utf-8")
 	body = ''
 	for line in ret_msg.splitlines():
+		#print(line)
 		echo_alarmaslog(line, "Authentication failure","")
 		
 	body = body + ret_msg
 	if body != '':
+		#print(body + "\n")
 		send_email(gMYMAIL,'Alert Type 1 : Authentication failure',body)
 
 	
@@ -705,6 +758,7 @@ def is_script_cron(line):
 			if (e==e2):
 				if (os.path.isfile(path)):
 					info = "Posible script running on cron :: "+line+"\n"
+					print(info)
 					alarm_type = "Suspicious script running on cron"
 					echo_alarmaslog(info, alarm_type,'')
 					return (info)
@@ -734,6 +788,7 @@ def is_shell_cron(line):
 	txt = output.decode("utf-8")
 	if(txt !=''):
 		info = "Posible shell running on cron:: "+line+"\n"
+		print(info)
 		alarm_type = "Suspicious shell running on cron"
 		echo_alarmaslog(info, alarm_type,'')
 		return (info)
@@ -770,6 +825,7 @@ def is_dangerapp_cron(line, P_APP_LIST):
 	for e in P_APP_LIST:
 		if (e==app):
 			info = "Malicious tool running on cron :: "+line+"\n"
+			print(info)
 			alarm_type = "Suspicious tool running on cron"
 			echo_alarmaslog(info, alarm_type,'')
 			return (info)
@@ -850,8 +906,9 @@ def check_failed_ssh(MY_IP,limit):
 			if counts[ip] == limit :
 				block_ip(ip)
 				body = body + '\n'+ip
-				echo_prevencionlog(ip+" was blocked using IPTables","SSH failed password more than "+limit+" times")
+				echo_prevencionlog(ip+" was blocked using IPTables","SSH failed password more than "+str(limit)+" times")
 				body_prevention = body_prevention + ip + "\n"
+				print(ip+" was blocked using IPTables. Too many SSH authentication failures.\n")
 		else:
 			counts[ip]=1
 
@@ -860,7 +917,7 @@ def check_failed_ssh(MY_IP,limit):
 		send_email(gMYMAIL,'Alert Type 2 : SSH authentication failure',body)
 
 	if body_prevention != '':
-		body_prevention = "The following IP's were blocked using IPTables :: SSH failed password" + body_prevention
+		body_prevention = "The following IP's were blocked using IPTables :: SSH failed password\n" + body_prevention
 		send_email(gMYMAIL,'Alert Type 3 : SSH blocked IP',body_prevention)
 	
 	
@@ -919,7 +976,7 @@ def send_to_quarentine(s_file):
 #	ip	(string) la IP que se desea boquear o banear.
 #
 def block_ip(ip):
-	p =subprocess.Popen("iptables -A INPUT -s "+ip+" -j DROP", stdout=subprocess.PIPE, shell=True)
+	p =subprocess.Popen("iptables -I INPUT -s "+ip+" -j DROP", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
 	p =subprocess.Popen("service iptables save", stdout=subprocess.PIPE, shell=True)
@@ -936,7 +993,7 @@ def block_ip(ip):
 #	pid	(string / int) process id del proceso a matar.
 #
 def kill_process(pid):
-	p =subprocess.Popen("kill -9 "+pid, stdout=subprocess.PIPE, shell=True)
+	p =subprocess.Popen("kill -9 "+str(pid), stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
 
@@ -951,6 +1008,8 @@ def kill_process(pid):
 #
 def ban_email(email):#verificar si es que no esta
 	p =subprocess.Popen("echo \""+email+" REJECT\">>/etc/postfix/sender_access", stdout=subprocess.PIPE, shell=True)
+	(output, err) = p.communicate()
+	p =subprocess.Popen("postmap /etc/postfix/sender_access", stdout=subprocess.PIPE, shell=True)
 	(output, err) = p.communicate()
 
 
@@ -1034,10 +1093,13 @@ def echo_prevencionlog(info, reason):
 def main():
 	global gQUARENTMAIL
 	global gQUARENT
+	global gMAXMEM
+	global gMAXCPU
 	data_list = connect_to_db()
 	gQUARENT = '/quarent'
 	MY_IP = data_list['myip']
 	MAX_Q_COUNT = data_list['maxmailq']
+	MAX_MAIL_PU = data_list['max_mail_pu']
 	MAX_SSH = data_list['max_ssh']
 	MAX_FUZZ = data_list['max_fuzz']
 	P_DIR = '/var/log/messages'
@@ -1057,29 +1119,32 @@ def main():
 
 	#print(''+P_DIR+'\n')
 	#ciclo main
-	#check_mailq(MAX_Q_COUNT)
-	#check_smtp_attack()
+	print("\n-------------------------\n\nSCANNING...\n\n-------------------------")
+	check_mailq(MAX_Q_COUNT)
+	check_smtp_attack(MAX_MAIL_PU)
 	#is_program("wget")
 	#is_program("asdfgh")
-	#check_promisc(P_DIR, P_APP_LIST)
-	#process_usage(PROCESS_USAGE_LIMITS)
-	#check_ip_connected()
-	#check_invalid_dir(MY_IP,MAX_FUZZ) #www.algo.com/noexiste
-	#check_promisc_apps(P_APP_LIST)
-	#check_md5sum(MD5SUM_LIST)
-	#check_tmp_dir()
-	#check_auths_log()
+	check_promisc(P_DIR, P_APP_LIST)
+	process_usage(PROCESS_USAGE_LIMITS)
+	check_ip_connected()
+	check_invalid_dir(MY_IP,MAX_FUZZ) #www.algo.com/noexiste
+	check_promisc_apps(P_APP_LIST)
+	check_md5sum(MD5SUM_LIST)
+	check_tmp_dir()
+	check_auths_log()
 	#ban_email("hola@something")
 	#ban_email("chau@something")
-	#check_cron_jobs(P_APP_LIST)
+	check_cron_jobs(P_APP_LIST)
 	#print (P_APP_LIST)
-	#check_failed_ssh(MY_IP,MAX_SSH)
+	check_failed_ssh(MY_IP,MAX_SSH)
 	
-	
+	#print(gMAXCPU)
+	#print(gMAXMEM)
+	#print(MAX_MAIL_PU)
 	if gQUARENTMAIL != '':
 		send_email(gMYMAIL,'Files moved to quarentine',gQUARENTMAIL)
 
-	print('SCAN COMPLETED')
+	print('\n-------------------------\n\nSCAN COMPLETED\n\n-------------------------')
 	return(0)
         
         

@@ -146,6 +146,11 @@
 				<input type="text" placeholder="New Max Mail Queue" name="maxmailq" required/>
 				<input type="text" placeholder="New Max SSH" name="max_ssh" required/>
 				<input type="text" placeholder="New Max Fuzz" name="max_fuzz" required/>
+				<br/>
+				<br/>
+				<input type="text" placeholder="New Max Mail Sent" name="max_mail_pu" required/>
+				<input type="text" placeholder="New Max Cpu %" name="max_cpu_def" required/>
+				<input type="text" placeholder="New Max Mem %" name="max_mem_def" required/>
 				<button type="submit" name="addGeneral">Update</button>
 			</form>
 			<br/>
@@ -182,6 +187,24 @@
 				while ($row = pg_fetch_row($result)){
 					//echo "<br> <b>My IPv4:</b> ".$row[0]." <b>Max mail queue:</b> ".$row[1]."<br>";
 					echo "<tr><td>".$row[1]."</td><td>".$row[4]."</td><td>".$row[5]."</td></tr>";
+				}
+			?>
+			</table>
+			<br/>
+			<br/>
+			<table style="width:100%">
+				<tr>
+					<th>Max Mail Sent Per User</th>
+					<th>Default Max CPU % Usage (for processes)</th>
+					<th>Default Max Mem % Usage (for processes)</th>
+				</tr>
+			<?php
+
+				$result = pg_query($dbconn, "SELECT * FROM general;");
+				if (!$result){echo "3";}
+				while ($row = pg_fetch_row($result)){
+					//echo "<br> <b>My IPv4:</b> ".$row[0]." <b>Max mail queue:</b> ".$row[1]."<br>";
+					echo "<tr><td>".$row[6]."</td><td>".$row[7]."</td><td>".$row[8]."</td></tr>";
 				}
 			?>
 			</table>
