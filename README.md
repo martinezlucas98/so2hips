@@ -185,6 +185,19 @@ En alarmas_log se guardará el registro de alarmas producidas por So2hips y en p
 
 
 
+### Creación del directorio de cuarentena y de md5sum backup
+Para crear el directorio de cuarentena ejecutamos: `sudo mkdir /etc/quarent`  
+Luego cambiamos los permisos a 664 para que solo root pueda editarlo, el resto solo lectura (nadie puede ejecutarlo)  
+`sudo chmod 664 /etc/quarent`
+
+Para crear el directorio de backups ejecutamos: `sudo mkdir /etc/backup_hashes_files`  
+Luego cambiamos los permisos a 664 para que solo root pueda editarlo, el resto solo lectura (nadie puede ejecutarlo)  
+`sudo chmod 664 /etc/backup_hashes_files`
+
+O para mas seguridad: `sudo chmod 660 /etc/backup_hashes_files`
+
+
+
 ### Instalar la interfaz/página web al servidor
 Siplemente debemos mover el contenido dentro de la carpeta so2hipsweb al directorio de su servidor web.  
 Si usted esta utilizando apache (comunmente incluido en CentOS) este directorio es: /var/www/html/
