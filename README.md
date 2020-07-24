@@ -94,7 +94,7 @@ La creamos ejecutando: `CREATE DATABASE hipsdb;`
 Ejecutando los siguientes comandos crearemos todas las tablas mencionadas anteriormente:  
 `CREATE TABLE dangerapp (names varchar(25));`  
 `CREATE TABLE processlimits (name varchar(25),cpu real, mem real, maxtime bigint);`  
-`CREATE TABLE general (myipv4 varchar(15),maxmailq int,email varchar,email_pass varchar,max_ssh int,max_fuzz int);`  
+`CREATE TABLE general (myipv4 varchar(15),maxmailq int,email varchar,email_pass varchar,max_ssh int,max_fuzz int,max_mail_pu int,default_max_cpu float,default_max_mem float);`  
 `CREATE TABLE md5sum (dir varchar, hash varchar);`  
 `CREATE TABLE alarms (time TIMESTAMP, alarm varchar);`  
 `CREATE TABLE prevention (time TIMESTAMP, action varchar);`  
@@ -110,6 +110,10 @@ solarwinds, prtg, manageengine, omnipeek, tcpdump, windump, wireshark, fiddler, 
 Por lo que recomendamos cargarlos a la tabla de _dangerapp_. Si quiere hacerlo, lo puede realizar ejecutando:
 
 `INSERT INTO dangerapp (name) VALUES ('solarwinds'),('prtg'),('manageengine'),('omnipeek'),('tcpdump'),('windump'),('wireshark'),('fiddler'),('netresec'),('capsa'),('ethereal');`
+
+También recomendamos agregar a la tabla de md5sum los archivos /etc/passwd y /etc/shadow. (Esto no es obligatorio, sino una recomendación)
+
+`INSERT INTO md5sum (dir) VALUES ('/etc/passwd'),('/etc/shadow');`
 
 \*Usted puede editar las tablas cuando desee por lo que no es necesario agregarlo ahora mismo\*
 
@@ -184,9 +188,39 @@ En alarmas_log se guardará el registro de alarmas producidas por So2hips y en p
 ### Instalar la interfaz/página web al servidor
 Siplemente debemos mover el contenido dentro de la carpeta so2hipsweb al directorio de su servidor web.  
 Si usted esta utilizando apache (comunmente incluido en CentOS) este directorio es: /var/www/html/
-Para poner el servidor apache online ejecutamos: `sudo systemctl service start httpd`
+Para poner el servidor apache online ejecutamos: `sudo service httpd start`
 
 Si no cuenta con el servidor web puede instalarlo ejecutando: `sudo yum install httpd`
+
+
+
+### Instalas IPTables
+So2hips utiliza los comandos de IPTables para bloquear las IP's que relizan fuzzing en el servidor y también las IP's que fracasan en realizar un inicio de sesión correcto por medio de SSH tras un determinado numero de intentos (esto es definido por el usuario).  
+Para ejecutar IPTables ejecutamos el comando: `sudo service iptables start`
+
+En el caso de que usted cuente con IPTables instalado, asegurese de que también cuente con iptables-service instalado.  
+Para instalarlo ejecute: `sudo yum install iptables-service`
+
+En caso de no contar con IPTables instalado, lo puede isntalar ejecutando: `sudo yum install iptables`
+
+
+
+### Recuerde
+El servidor debe de contar con los servicios de apache http, sshd, iptables y postgresql ejecutandose para que So2hips se ejecuta correctamente.
+
+Iniciar apache: `service httpd start`
+
+Iniciar postgresql (necesario): `service postgresql start`
+
+Habilitar conexiones por SSH: `service sshd start`
+
+Iniciar iptables (necesario): `service iptables start`
+
+
+
+### Utilizar la interfaz web
+So2hips cuenta con una simple interfaz web la cual muestra los datos contenidos en la base de datos que esta utiliza (hipsdb) y permite su edición.
+
 
 
 ## So2hips ya se encuentra listo para usar!!!
