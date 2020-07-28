@@ -360,7 +360,7 @@ def check_promisc_devs(P_DIR ):
 	data_on = output_on.decode("utf-8")
 	list_on = data_on.splitlines()
 	l_on = len(list_on)
-	
+	body = ''
 	if l_off != l_on:
 		#print("Smth is in promisc mode\n")
 		compare = []
